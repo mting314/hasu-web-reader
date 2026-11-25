@@ -4,7 +4,7 @@ ADV Script Compiler & Bilingual Translation Aligner for hasu-web-reader.
 
 Compiles raw Link! Like! Love Live! story scripts (`story_main_<ScriptId>.txt`) into
 seekable 3D scene snapshots + intra-turn choreography timelines + aligned multi-source
-bilingual translations (`public/data/scenarios/<ScriptId>.json` and `public/data/catalog.json`).
+bilingual translations (`public/data/scenarios/<slug>.json`, e.g. 103-ep1-part1.json, and `public/data/catalog.json`).
 """
 
 from __future__ import annotations
@@ -214,6 +214,17 @@ def load_ep1_part1_dub_script() -> list[dict[str, str]]:
         if len(parts) == 3:
             out.append({"speaker": parts[1], "text": parts[2]})
     return out
+
+
+def slug_for_script_id(script_id: str) -> str:
+    """Human-readable story id: 10300101 (term 103, episode 001, part 01) -> "103-ep1-part1".
+
+    Keep in sync with slugForScriptId() in src/storySlug.ts.
+    """
+    m = re.fullmatch(r"(\d{3})(\d{3})(\d{2})", script_id)
+    if not m:
+        return script_id
+    return f"{m.group(1)}-ep{int(m.group(2))}-part{int(m.group(3))}"
 
 
 def resolve_local_or_gcs(rel_path: str) -> str:
@@ -849,10 +860,16 @@ def main() -> None:
     catalog_entries = []
     for ep in sample_episodes:
         sid = ep["scriptId"]
-        print(f"Compiling scenario {sid} ({ep['seriesTitleEn']} - {ep['partTitleEn']})...")
+        slug = slug_for_script_id(sid)
+        ep = {"slug": slug, **ep}
+        print(f"Compiling scenario {slug} ({sid}: {ep['seriesTitleEn']} - {ep['partTitleEn']})...")
         compiled = compile_script(sid, ep, assets_by_id, motions_meta_by_id, bgm_map, lexer)
-        out_path = scenarios_dir / f"{sid}.json"
+        compiled = {"slug": slug, **compiled}
+        out_path = scenarios_dir / f"{slug}.json"
         out_path.write_text(json.dumps(compiled, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        legacy_path = scenarios_dir / f"{sid}.json"  # files used to be named by script id
+        if legacy_path != out_path and legacy_path.exists():
+            legacy_path.unlink()
         print(
             f"  -> Wrote {out_path.relative_to(ROOT_DIR)} "
             f"({compiled['totalTurns']} turns, {len(compiled['translationSources'])} translation sources, "

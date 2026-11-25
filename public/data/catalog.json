@@ -1,6 +1,7 @@
 {
   "episodes": [
     {
+      "slug": "103-ep1-part1",
       "scriptId": "10300101",
       "seriesId": "103001",
       "term": "103rd Term (2023)",
@@ -44,6 +45,7 @@
       ]
     },
     {
+      "slug": "103-ep1-part2",
       "scriptId": "10300102",
       "seriesId": "103001",
       "term": "103rd Term (2023)",

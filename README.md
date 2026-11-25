@@ -10,7 +10,7 @@ characters, motions, voice, BGM and sound effects. Layout modelled on
 ```sh
 npm install
 npm run cache-assets -- 10300101 10300102   # download each episode's assets into public/assets/
-npm run dev                                  # http://localhost:5173/?script=10300101&line=1
+npm run dev                                  # http://localhost:5173/?story=103-ep1-part1&line=1
 ```
 
 `public/assets/` is not in git. `cache-assets` fetches the models, motions, backgrounds,
@@ -26,7 +26,7 @@ npm run build-scenarios
 ```
 
 `scripts/build_scenarios.py` compiles the raw scripts (`../hasu-dub/story_main_txt/`) into
-`public/data/scenarios/<scriptId>.json`: seekable stage snapshots, aligned translations, and
+`public/data/scenarios/<slug>.json` (e.g. `103-ep1-part1.json` for script 10300101): seekable stage snapshots, aligned translations, and
 the Japanese word segmentation used for hover lookup (`scripts/jp_lexer.py`). On first run it
 downloads JMdict into `data_cache/jmdict/` (~165 MB, git-ignored).
 
@@ -37,6 +37,27 @@ downloads JMdict into `data_cache/jmdict/` (~165 MB, git-ignored).
 | `public/assets/` | cached game assets | `npm run cache-assets -- <scriptId>` |
 | `data_cache/jmdict/` | dictionary download | `npm run build-scenarios` |
 | `data-inspect/`, `.inspect-tmp/` | raw game asset dumps, scratch space | local only |
+
+## Hosting assets on GCS
+
+Processed assets can be served from the `gs://hasu-web-reader-assets` bucket (project
+`future-name-201021`; public object reads, no listing, CORS for GET/HEAD) instead of
+`public/assets/`. Upload a cached folder with paths mirrored:
+
+```sh
+scripts/upload_assets_gcs.sh 3d          # GLB/JSON stored gzip-encoded
+```
+
+Then point the app at the bucket in `.env.local` (git-ignored); only requests under the
+listed prefixes go remote:
+
+```sh
+VITE_ASSET_BASE_URL=https://storage.googleapis.com/hasu-web-reader-assets
+VITE_REMOTE_ASSET_PREFIXES=3d/           # empty = all assets
+```
+
+`src/remoteAssets.ts` rewrites Three.js model/texture loads and JSON fetches; audio still
+loads from `public/assets/`.
 
 ## Credits
 

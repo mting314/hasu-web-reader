@@ -21,5 +21,8 @@ data_cache/jmdict/
 # Game texture extracted only for inspection (not a build input)
 data_cache/*.png
 
+# Local env overrides (e.g. VITE_ASSET_BASE_URL for GCS-hosted assets)
+*.local
+
 # OS / editor
 .DS_Store

@@ -365,23 +365,93 @@ export class AudioMixer {
   // BGM
   // -------------------------------------------------------------------------
 
+  private bgmUserPaused = false;
+  private hiddenPausedState: { voice: boolean; bgm: boolean; seIds: string[] } | null = null;
+
   public syncBgm(url: string | null, scriptVolume = 1.0) {
     this.scriptBgmVol = scriptVolume;
     this.applyVolumes();
     if (!url) {
       this.bgmAudio.pause();
       this.currentBgmUrl = null;
+      this.bgmUserPaused = false;
       return;
     }
     if (this.currentBgmUrl === url) {
-      if (this.bgmAudio.paused) this.bgmAudio.play().catch(() => {});
+      if (this.bgmAudio.paused && !this.bgmUserPaused) {
+        this.bgmAudio.play().catch(() => {});
+      }
       return;
     }
     this.currentBgmUrl = url;
+    this.bgmUserPaused = false;
     this.bgmAudio.src = url;
     this.bgmAudio.currentTime = 0;
     this.applyVolumes();
     this.bgmAudio.play().catch(() => {});
+  }
+
+  public isBgmPlaying(): boolean {
+    return Boolean(this.currentBgmUrl && !this.bgmAudio.paused);
+  }
+
+  public toggleBgmPlayPause(): boolean {
+    if (!this.currentBgmUrl) return false;
+    if (this.bgmAudio.paused) {
+      this.bgmUserPaused = false;
+      this.bgmAudio.play().catch(() => {});
+      return true;
+    } else {
+      this.bgmUserPaused = true;
+      this.bgmAudio.pause();
+      return false;
+    }
+  }
+
+  public getBgmTime(): { currentTime: number; duration: number } {
+    const dur = Number.isFinite(this.bgmAudio.duration) ? this.bgmAudio.duration : 0;
+    const cur = Number.isFinite(this.bgmAudio.currentTime) ? this.bgmAudio.currentTime : 0;
+    return { currentTime: cur, duration: dur };
+  }
+
+  public seekBgm(timeSec: number) {
+    if (!this.currentBgmUrl || !Number.isFinite(this.bgmAudio.duration)) return;
+    try {
+      this.bgmAudio.currentTime = Math.max(0, Math.min(this.bgmAudio.duration, timeSec));
+    } catch {
+      // ignore if metadata not loaded
+    }
+  }
+
+  public pauseForHiddenTab() {
+    const voiceWasPlaying = this.isVoicePlaying();
+    const bgmWasPlaying = this.isBgmPlaying();
+    const activeSeIds: string[] = [];
+    if (voiceWasPlaying) this.voiceAudio.pause();
+    if (bgmWasPlaying) this.bgmAudio.pause();
+    for (const [id, t] of this.ambience.entries()) {
+      if (!t.el.paused) {
+        t.el.pause();
+        activeSeIds.push(id);
+      }
+    }
+    this.hiddenPausedState = { voice: voiceWasPlaying, bgm: bgmWasPlaying, seIds: activeSeIds };
+  }
+
+  public resumeFromHiddenTab() {
+    if (!this.hiddenPausedState) return;
+    const st = this.hiddenPausedState;
+    this.hiddenPausedState = null;
+    if (st.voice && this.currentVoiceUrl) {
+      this.voiceAudio.play().catch(() => {});
+    }
+    if (st.bgm && this.currentBgmUrl && !this.bgmUserPaused) {
+      this.bgmAudio.play().catch(() => {});
+    }
+    for (const id of st.seIds) {
+      const t = this.ambience.get(id);
+      if (t && t.el.paused) t.el.play().catch(() => {});
+    }
   }
 
   // -------------------------------------------------------------------------

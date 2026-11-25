@@ -14,6 +14,7 @@ import {
   CharacterState,
   DialogueTurn,
   PropState,
+  StageResolution,
   StageSnapshot,
 } from "../types/scenario";
 
@@ -21,6 +22,7 @@ interface StageCanvasProps {
   turn: DialogueTurn;
   cameraMode: "adv" | "orbit";
   enable3D: boolean;
+  resolution?: StageResolution;
   audioMixer: AudioMixer;
   onAdvance: () => void;
 }
@@ -108,11 +110,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   turn,
   cameraMode,
   enable3D,
+  resolution = "auto",
   audioMixer,
   onAdvance,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const [loadingCount, setLoadingCount] = useState(0);
+  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -172,6 +177,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    rendererRef.current = renderer;
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
@@ -272,8 +278,26 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       cancelAnimationFrame(frameId);
       resizeObs.disconnect();
       renderer.dispose();
+      rendererRef.current = null;
     };
   }, [audioMixer]);
+
+  // Apply 3D resolution pixel ratio changes
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    const container = mountRef.current;
+    if (!renderer || !container) return;
+    const dpr = window.devicePixelRatio || 1;
+    const ratioMap: Record<StageResolution, number> = {
+      auto: Math.min(dpr, 2),
+      low: 0.75,
+      medium: 1.0,
+      high: 1.5,
+      ultra: Math.min(dpr * 1.5, 2.5),
+    };
+    renderer.setPixelRatio(ratioMap[resolution] ?? Math.min(dpr, 2));
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  }, [resolution]);
 
   // Toggle OrbitControls when cameraMode changes
   useEffect(() => {
@@ -730,15 +754,31 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   return (
     <div
       className="relative w-full h-full select-none cursor-pointer overflow-hidden"
-      onClick={() => {
+      onClick={(e) => {
         if (cameraMode === "adv") {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const id = Date.now() + Math.random();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          setRipples((prev) => [...prev.slice(-4), { id, x, y }]);
+          window.setTimeout(() => {
+            setRipples((prev) => prev.filter((r) => r.id !== id));
+          }, 550);
           onAdvance();
         }
       }}
     >
       <div ref={mountRef} className="w-full h-full" />
+      {ripples.map((r) => (
+        <span
+          key={r.id}
+          aria-hidden="true"
+          className="cleista-tap-ripple pointer-events-none"
+          style={{ left: r.x, top: r.y }}
+        />
+      ))}
       {loadingCount > 0 && (
-        <div className="absolute top-12 right-4 z-20 flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700/70 px-3 py-1 text-xs text-amber-300 backdrop-blur-md">
+        <div className="absolute top-14 right-4 z-20 flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700/70 px-3 py-1 text-xs text-amber-300 backdrop-blur-md">
           <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
           Loading 3D assets…
         </div>

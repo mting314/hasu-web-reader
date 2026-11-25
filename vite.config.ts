@@ -6,5 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    watch: {
+      ignored: ["**/.inspect-tmp/**", "**/data-inspect/**", "**/data_cache/**"],
+    },
   },
 });

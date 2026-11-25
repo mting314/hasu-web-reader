@@ -318,6 +318,51 @@ const LookupPopover: React.FC<LookupPopoverProps> = ({
   );
 };
 
+const KANJI_RE = /[\u4e00-\u9faf\u3005\u3400-\u4dbf]/;
+
+function splitFurigana(
+  surface: string,
+  entry: LexEntry | undefined,
+  match: JpTokenMatch | undefined
+): { prefix: string; kanji: string; rt: string; suffix: string } | null {
+  if (!entry || !match || !KANJI_RE.test(surface)) return null;
+  const hw = buildHeadword(entry, match);
+  const reading = hw.reading;
+  if (!reading) return null;
+
+  let firstK = -1;
+  let lastK = -1;
+  for (let i = 0; i < surface.length; i++) {
+    if (KANJI_RE.test(surface[i])) {
+      if (firstK === -1) firstK = i;
+      lastK = i;
+    }
+  }
+  if (firstK === -1) return null;
+
+  const prefix = surface.slice(0, firstK);
+  const kanji = surface.slice(firstK, lastK + 1);
+  const suffix = surface.slice(lastK + 1);
+
+  let rStart = 0;
+  while (rStart < prefix.length && rStart < reading.length && reading[rStart] === prefix[rStart]) {
+    rStart++;
+  }
+
+  // Count okurigana after the last kanji in the matched dictionary form (e.g. "浮かれる" -> 3 chars "かれる")
+  const dictForm = hw.word;
+  let dictLastK = -1;
+  for (let i = 0; i < dictForm.length; i++) {
+    if (KANJI_RE.test(dictForm[i])) dictLastK = i;
+  }
+  const dictOkuriLen = dictLastK !== -1 ? Math.max(0, dictForm.length - 1 - dictLastK) : 0;
+  const rEnd = Math.max(rStart + 1, reading.length - dictOkuriLen);
+  const rt = reading.slice(rStart, rEnd);
+  if (!rt || rt === kanji) return null;
+
+  return { prefix, kanji, rt, suffix };
+}
+
 interface JapaneseLookupTextProps {
   tokens: JpToken[] | undefined;
   text: string;
@@ -328,6 +373,12 @@ interface JapaneseLookupTextProps {
   hoverDelayMs?: number;
   /** clicking a word pins its popover (and doesn't bubble, e.g. to "advance line") */
   clickToPin?: boolean;
+  /** render <ruby><rt> furigana above kanji words */
+  showFurigana?: boolean;
+  /** optional typewriter reveal character limit */
+  maxChars?: number;
+  /** notify parent when a lookup popover opens or closes */
+  onLookupActiveChange?: (open: boolean) => void;
 }
 
 /**
@@ -343,6 +394,9 @@ export const JapaneseLookupText: React.FC<JapaneseLookupTextProps> = ({
   className = "",
   hoverDelayMs = 60,
   clickToPin = true,
+  showFurigana = false,
+  maxChars = 9999,
+  onLookupActiveChange,
 }) => {
   const [active, setActive] = useState<{ idx: number; anchorEl: HTMLElement } | null>(null);
   const [pinned, setPinned] = useState(false);
@@ -350,6 +404,10 @@ export const JapaneseLookupText: React.FC<JapaneseLookupTextProps> = ({
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
   const segs = useMemo<JpToken[]>(() => (tokens && tokens.length ? tokens : [{ t: text }]), [tokens, text]);
+
+  useEffect(() => {
+    onLookupActiveChange?.(Boolean(active));
+  }, [active, onLookupActiveChange]);
 
   const clearTimers = () => {
     if (openTimer.current !== null) window.clearTimeout(openTimer.current);
@@ -405,16 +463,32 @@ export const JapaneseLookupText: React.FC<JapaneseLookupTextProps> = ({
   const portalTarget = typeof document !== "undefined" ? (document.fullscreenElement as HTMLElement | null) ?? document.body : null;
   const activeToken = active ? segs[active.idx] : null;
 
+  let charBudget = maxChars;
+
   return (
-    <div className={className} role="group" aria-label="Japanese text with word lookup">
+    <div className={className} role="group" aria-label="Japanese word lookup">
       <p className="leading-relaxed whitespace-pre-wrap">
         {segs.map((tok, idx) => {
-          if (!tok.m || tok.m.length === 0) return <span key={idx}>{tok.t}</span>;
+          if (charBudget <= 0) return null;
+          const visibleText =
+            charBudget >= tok.t.length ? tok.t : tok.t.slice(0, Math.max(0, charBudget));
+          const isCompleteTok = visibleText.length === tok.t.length;
+          charBudget -= tok.t.length;
+
+          if (!tok.m || tok.m.length === 0) return <span key={idx}>{visibleText}</span>;
           const isActive = active?.idx === idx;
+          const firstMatch = tok.m.find((m) => lexicon[m.e]);
+          const firstEntry = firstMatch ? lexicon[firstMatch.e] : undefined;
+          const furi =
+            showFurigana && isCompleteTok
+              ? splitFurigana(tok.t, firstEntry, firstMatch)
+              : null;
+
           return (
             <span
               key={idx}
               data-jp-token
+              data-jp-lookable="true"
               onMouseEnter={(e) => {
                 const el = e.currentTarget;
                 cancelClose();
@@ -438,10 +512,21 @@ export const JapaneseLookupText: React.FC<JapaneseLookupTextProps> = ({
                 }
               }}
               className={`rounded-[4px] transition-colors duration-100 ${clickToPin ? "cursor-pointer" : "cursor-help"} ${
-                isActive ? "bg-amber-300/25 text-amber-100" : "hover:bg-amber-300/15 hover:text-amber-50"
+                isActive ? "bg-amber-300/30 text-amber-100" : "hover:bg-amber-300/20 hover:text-amber-50"
               }`}
             >
-              {tok.t}
+              {furi ? (
+                <>
+                  {furi.prefix}
+                  <ruby>
+                    {furi.kanji}
+                    <rt>{furi.rt}</rt>
+                  </ruby>
+                  {furi.suffix}
+                </>
+              ) : (
+                visibleText
+              )}
             </span>
           );
         })}

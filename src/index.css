@@ -16,3 +16,61 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #3b4963;
 }
+
+/* Cleista-style heavy dark text outline + drop shadow for frameless stage subtitles */
+.cleista-stroke {
+  text-shadow:
+    -1.5px -1.5px 0 rgba(10, 14, 22, 0.96),
+     1.5px -1.5px 0 rgba(10, 14, 22, 0.96),
+    -1.5px  1.5px 0 rgba(10, 14, 22, 0.96),
+     1.5px  1.5px 0 rgba(10, 14, 22, 0.96),
+     0px   -1.8px 0 rgba(10, 14, 22, 0.96),
+     0px    1.8px 0 rgba(10, 14, 22, 0.96),
+    -1.8px  0px   0 rgba(10, 14, 22, 0.96),
+     1.8px  0px   0 rgba(10, 14, 22, 0.96),
+     0px    3px   8px rgba(0, 0, 0, 0.85);
+}
+
+.cleista-speaker-stroke {
+  text-shadow:
+    -1.5px -1.5px 0 rgba(10, 14, 22, 0.98),
+     1.5px -1.5px 0 rgba(10, 14, 22, 0.98),
+    -1.5px  1.5px 0 rgba(10, 14, 22, 0.98),
+     1.5px  1.5px 0 rgba(10, 14, 22, 0.98),
+     0px    2px   6px rgba(0, 0, 0, 0.9);
+}
+
+ruby {
+  ruby-align: center;
+}
+
+ruby > rt {
+  font-size: 0.58em;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #f1f5f9;
+  user-select: none;
+}
+
+@keyframes cleistaTapRipple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.25);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.4);
+    opacity: 0;
+  }
+}
+
+.cleista-tap-ripple {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  border: 2px solid rgba(186, 230, 253, 0.85);
+  box-shadow: 0 0 14px rgba(125, 211, 252, 0.55);
+  animation: cleistaTapRipple 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 25;
+}

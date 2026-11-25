@@ -13,6 +13,8 @@ export interface TranslationSource {
 }
 
 export interface EpisodeSummary {
+  /** human-readable id used in URLs and data file names, e.g. "103-ep1-part1" */
+  slug?: string;
   scriptId: string;
   seriesId: string;
   term: string;
@@ -223,6 +225,8 @@ export interface DialogueTurn {
 }
 
 export interface ScenarioData {
+  /** human-readable id used in URLs and data file names, e.g. "103-ep1-part1" */
+  slug?: string;
   scriptId: string;
   episode: EpisodeSummary;
   totalTurns: number;
@@ -235,12 +239,22 @@ export interface ScenarioData {
   lexTags: Record<string, string>;
 }
 
+export type StageResolution = "auto" | "low" | "medium" | "high" | "ultra";
+export type PrefetchMode = "off" | "next1" | "next5" | "all";
+
 export interface ReaderSettings {
   primaryTranslationId: string;
   showSecondaryLanguage: boolean;
   subtitleLayout: "side-by-side" | "stacked" | "primary-only";
   textSpeed: number; // 1..5 (5 = instant)
   enable3DStage: boolean;
+  stageResolution: StageResolution;
   cameraMode: "adv" | "orbit";
   autoPlayDelaySec: number;
+  showFurigana: boolean;
+  hidePrimaryWhenTranslated: boolean;
+  prefetchMode: PrefetchMode;
+  pauseWhenHidden: boolean;
+  removeRoundedCorners: boolean;
+  showDebugInfo: boolean;
 }
