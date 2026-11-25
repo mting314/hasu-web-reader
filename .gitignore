@@ -1,0 +1,25 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+
+# Cached game assets (3D models, voice, BGM, SE). Re-download with
+#   npm run cache-assets -- <scriptId> [<scriptId> ...]
+public/assets/
+
+# Raw game asset dumps and local inspection scratch space (tens of GB)
+data-inspect/
+.inspect-tmp/
+*.7z
+
+# JMdict download + parsed index (~165 MB). scripts/build_scenarios.py re-downloads
+# and rebuilds it automatically. The rest of data_cache/ stays tracked: those files are
+# build inputs that can't be re-fetched (e.g. model_viewer_context.json, wordfreq_ja.json).
+data_cache/jmdict/
+# Game texture extracted only for inspection (not a build input)
+data_cache/*.png
+
+# OS / editor
+.DS_Store

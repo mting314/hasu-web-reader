@@ -1,0 +1,528 @@
+{
+  "expressions": [
+    {
+      "name": "NORMAL_TUUJO",
+      "shapes": {
+        "Face_.Eyelids_Normal": 100,
+        "Face_.Mouth_Normal": 100,
+        "Brow_.Eyebrow_Normal": 100,
+        "EyeShadow_.Eyelids_Normal": 100
+      },
+      "description": "通常"
+    },
+    {
+      "name": "NORMAL_TUUJO-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Brow_.Eyebrow_Down_L": 100,
+        "Brow_.Eyebrow_Down_R": 100,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "通常（目閉じ）"
+    },
+    {
+      "name": "NORMAL_EGAO",
+      "shapes": {
+        "Face_.Eyelids_Open": 32,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "EyeShadow_.Eyelids_Open": 32
+      },
+      "description": "笑顔"
+    },
+    {
+      "name": "NORMAL_EGAO-Close",
+      "shapes": {
+        "Face_.Eyelids_SmileB_L": 100,
+        "Face_.Eyelids_SmileB_R": 100,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "Brow_.Eyebrow_Down_L": 50,
+        "Brow_.Eyebrow_Down_R": 50,
+        "EyeShadow_.Eyelids_SmileB_L": 100,
+        "EyeShadow_.Eyelids_SmileB_R": 100
+      },
+      "description": "笑顔（目閉じ）"
+    },
+    {
+      "name": "NORMAL_HOHOEMI",
+      "shapes": {
+        "Face_.Eyelids_Smile": 100,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "Eye_.Eyelids_pupilSquash": 25,
+        "EyeShadow_.Eyelids_Smile": 100
+      },
+      "description": "微笑"
+    },
+    {
+      "name": "NORMAL_HOHOEMI-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "Brow_.Eyebrow_Down_L": 70,
+        "Brow_.Eyebrow_Down_R": 70,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "微笑（目閉じ）"
+    },
+    {
+      "name": "NORMAL_KANASHII",
+      "shapes": {
+        "Face_.Eyelids_Sad": 100,
+        "Face_.Mouth_Sad": 100,
+        "Brow_.Eyebrow_Sad": 100,
+        "Eye_.Eyelids_pupilSquash": 60,
+        "EyeShadow_.Eyelids_Sad": 100
+      },
+      "description": "悲しい"
+    },
+    {
+      "name": "NORMAL_KANASHII-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Sad": 100,
+        "Brow_.Eyebrow_Sad": 100,
+        "Brow_.Eyebrow_Down_L": 70,
+        "Brow_.Eyebrow_Down_R": 70,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "悲しい（目閉じ）"
+    },
+    {
+      "name": "NORMAL_IKARI",
+      "shapes": {
+        "Face_.Eyelids_Angry": 100,
+        "Face_.Mouth_Angry": 100,
+        "Brow_.Eyebrow_Angry": 100,
+        "Eye_.Eyelids_pupilSquash": 20,
+        "EyeShadow_.Eyelids_Angry": 100
+      },
+      "description": "怒り"
+    },
+    {
+      "name": "NORMAL_IKARI-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Angry": 100,
+        "Brow_.Eyebrow_Angry": 100,
+        "Brow_.Eyebrow_Down_L": 15,
+        "Brow_.Eyebrow_Down_R": 15,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "怒り（目閉じ）"
+    },
+    {
+      "name": "NORMAL_NIKKORI",
+      "shapes": {
+        "Face_.Eyelids_SmileB_L": 30,
+        "Face_.Eyelids_SmileB_R": 30,
+        "Face_.Eyelids_CloseUnder": 100,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "Brow_.Eyebrow_Sad": 20,
+        "Brow_.Eyebrow_Down_L": 60,
+        "Brow_.Eyebrow_Down_R": 60,
+        "Eye_.Eyelids_pupilSquash": 100
+      },
+      "description": "にっこり"
+    },
+    {
+      "name": "NORMAL_EGAO-Mihiraki",
+      "shapes": {
+        "Face_.Eyelids_Open": 100,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 100,
+        "Brow_.Eyebrow_Smile_R": 100,
+        "Brow_.Eyebrow_Up_L": 20,
+        "Brow_.Eyebrow_Up_R": 20,
+        "EyeShadow_.Eyelids_Open": 100
+      },
+      "description": "笑顔（見開き強）"
+    },
+    {
+      "name": "NORMAL_IZIKERU",
+      "shapes": {
+        "Face_.Eyelids_Sulk": 100,
+        "Face_.Mouth_Sulk": 100,
+        "Brow_.Eyebrow_Sulk": 100,
+        "EyeShadow_.Eyelids_Sulk": 100
+      },
+      "description": "いじける"
+    },
+    {
+      "name": "NORMAL_IZIKERU-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Sulk": 100,
+        "Brow_.Eyebrow_Down_L": 100,
+        "Brow_.Eyebrow_Down_R": 100,
+        "Brow_.Eyebrow_Sulk": 100,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "いじける（目閉じ）"
+    },
+    {
+      "name": "NORMAL_UTAGAI",
+      "shapes": {
+        "Face_.Eyelids_Doubt": 100,
+        "Face_.Mouth_Doubt": 100,
+        "Brow_.Eyebrow_Doubt": 100,
+        "Eye_.Eyelids_HighLightDown": 100,
+        "EyeShadow_.Eyelids_Doubt": 100
+      },
+      "description": "うたがい"
+    },
+    {
+      "name": "NORMAL_UTAGAI-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Doubt": 100,
+        "Brow_.Eyebrow_Down_L": 100,
+        "Brow_.Eyebrow_Down_R": 100,
+        "Brow_.Eyebrow_Doubt": 100,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "うたがい（目閉じ）"
+    },
+    {
+      "name": "NORMAL_NEMUI",
+      "shapes": {
+        "Face_.Eyelids_Drowse": 100,
+        "Face_.Mouth_Drowse": 100,
+        "Brow_.Eyebrow_Drowse": 100,
+        "Eye_.Eyelids_HighLightDown": 70,
+        "EyeShadow_.Eyelids_Drowse": 100
+      },
+      "description": "眠い"
+    },
+    {
+      "name": "NORMAL_NEMUI-Close",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Drowse": 100,
+        "Brow_.Eyebrow_Down_L": 100,
+        "Brow_.Eyebrow_Down_R": 100,
+        "Brow_.Eyebrow_Drowse": 100,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "眠い（目閉じ）"
+    },
+    {
+      "name": "LIVE_NIGAWARAI",
+      "shapes": {
+        "Face_.Mouth_Smile": 100,
+        "Face_.Mouth_Down": 25,
+        "Face_.Eyelids_BitterSmile": 100,
+        "Brow_.Eyebrow_BitterSmile": 100,
+        "EyeShadow_.Eyelids_BitterSmile": 90
+      },
+      "description": "ライブ_苦笑い"
+    },
+    {
+      "name": "EX_HAZUKASHII",
+      "shapes": {
+        "Face_.Eyelids_Hazukashi": 100,
+        "Face_.Mouth_Hazukashi": 100,
+        "Brow_.Eyebrow_Hazukashi": 85,
+        "EyeShadow_.Eyelids_Hazukashi": 100
+      },
+      "description": "恥ずかしい"
+    },
+    {
+      "name": "EX_JITOME",
+      "shapes": {
+        "Face_.Eyelids_Jitome": 100,
+        "Face_.Mouth_Jitome": 100,
+        "Brow_.Eyebrow_Jitotoji": 100,
+        "Eye_.Eyelids_pupil": 40,
+        "EyeShadow_.Eyelids_Jitome": 100
+      },
+      "description": "ｼﾞﾄ目"
+    },
+    {
+      "name": "EX_PUNSUKA",
+      "shapes": {
+        "Face_.Eyelids_Punsuka": 100,
+        "Face_.Mouth_Punsuka": 100,
+        "Brow_.Eyebrow_Punsuka": 100,
+        "EyeShadow_.Eyelids_Punsuka": 100
+      },
+      "description": "ぷんすか"
+    },
+    {
+      "name": "EX_DONBIKI",
+      "shapes": {
+        "Face_.Eyelids_Donbiki": 100,
+        "Face_.Mouth_Donbiki": 100,
+        "Brow_.Eyebrow_Donbiki": 100,
+        "Eye_.Eyelids_pupil": 40,
+        "EyeShadow_.Eyelids_Donbiki": 100
+      }
+    },
+    {
+      "name": "EX_AKIREWARAI",
+      "shapes": {
+        "Face_.Eyelids_Akirewarai": 100,
+        "Face_.Mouth_Akirewarai": 100,
+        "Brow_.Eyebrow_Akirewarai": 100,
+        "EyeShadow_.Eyelids_Akirewarai": 100
+      }
+    },
+    {
+      "name": "EX_SHINPAI",
+      "shapes": {
+        "Face_.Eyelids_CloseUnder": 50,
+        "Face_.Eyelids_Shinpai": 100,
+        "Face_.Mouth_Shinpai": 100,
+        "Brow_.Eyebrow_Shinpai": 100,
+        "EyeShadow_.Eyelids_Shinpai": 100
+      },
+      "description": "心配"
+    },
+    {
+      "name": "EX_TERE",
+      "shapes": {
+        "Face_.Eyelids_Tere": 100,
+        "Face_.Mouth_Tere": 100,
+        "Brow_.Eyebrow_Tere": 96,
+        "EyeShadow_.Eyelids_Tere": 100
+      },
+      "description": "照れ"
+    },
+    {
+      "name": "EX_AKIRERU",
+      "shapes": {
+        "Face_.Eyelids_Akire": 100,
+        "Face_.Mouth_Akire": 100,
+        "Brow_.Eyebrow_Akire": 100,
+        "EyeShadow_.Eyelids_Akire": 100
+      }
+    },
+    {
+      "name": "ADV_Wink_Left",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 6,
+        "Face_.Mouth_Smile": 30,
+        "Brow_.Eyebrow_Angry": 15,
+        "Brow_.Eyebrow_Down_L": 65,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 6
+      },
+      "description": "ADV_ウィンク（右）"
+    },
+    {
+      "name": "ADV_Wink_Right",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 6,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Smile": 30,
+        "Brow_.Eyebrow_Angry": 15,
+        "Brow_.Eyebrow_Down_R": 65,
+        "EyeShadow_.Eyelids_Close_L": 6,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "ADV_ウィンク（左）"
+    },
+    {
+      "name": "ADV_SmileWink_Left",
+      "shapes": {
+        "Face_.Eyelids_SmileB_L": 100,
+        "Face_.Eyelids_Open": 23,
+        "Face_.Eyelids_CloseUnder": 40,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 66,
+        "Brow_.Eyebrow_Smile_R": 66,
+        "Brow_.Eyebrow_Angry": 7,
+        "Brow_.Eyebrow_Up_L": 47,
+        "Brow_.Eyebrow_Up_R": 47,
+        "Brow_.Eyebrow_Down_L": 58,
+        "EyeShadow_.Eyelids_SmileB_L": 100,
+        "EyeShadow_.Eyelids_Open": 23
+      },
+      "description": "ADV_笑顔ウィンク（右）"
+    },
+    {
+      "name": "ADV_SmileWink_Right",
+      "shapes": {
+        "Face_.Eyelids_SmileB_R": 100,
+        "Face_.Eyelids_Open": 23,
+        "Face_.Eyelids_CloseUnder": 40,
+        "Face_.Mouth_Smile": 100,
+        "Brow_.Eyebrow_Smile_L": 66,
+        "Brow_.Eyebrow_Smile_R": 66,
+        "Brow_.Eyebrow_Angry": 7,
+        "Brow_.Eyebrow_Up_L": 47,
+        "Brow_.Eyebrow_Up_R": 47,
+        "Brow_.Eyebrow_Down_R": 58,
+        "EyeShadow_.Eyelids_SmileB_R": 100,
+        "EyeShadow_.Eyelids_Open": 23
+      },
+      "description": "ADV_笑顔ウィンク（左）"
+    },
+    {
+      "name": "ADV_CoolWink_Left1",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 100,
+        "Face_.Eyelids_Close_R": 9,
+        "Face_.Mouth_Angry": 50,
+        "Brow_.Eyebrow_Smile_L": 36,
+        "Brow_.Eyebrow_Smile_R": 36,
+        "Brow_.Eyebrow_Angry": 100,
+        "Brow_.Eyebrow_Up_L": 40,
+        "Brow_.Eyebrow_Up_R": 100,
+        "EyeShadow_.Eyelids_Close_L": 100,
+        "EyeShadow_.Eyelids_Close_R": 9
+      },
+      "description": "ADV_クールウィンク（右）"
+    },
+    {
+      "name": "ADV_CoolWink_Right1",
+      "shapes": {
+        "Face_.Eyelids_Close_L": 9,
+        "Face_.Eyelids_Close_R": 100,
+        "Face_.Mouth_Angry": 50,
+        "Brow_.Eyebrow_Smile_L": 36,
+        "Brow_.Eyebrow_Smile_R": 36,
+        "Brow_.Eyebrow_Angry": 100,
+        "Brow_.Eyebrow_Up_L": 100,
+        "Brow_.Eyebrow_Up_R": 40,
+        "EyeShadow_.Eyelids_Close_L": 9,
+        "EyeShadow_.Eyelids_Close_R": 100
+      },
+      "description": "ADV_クールウィンク（左）"
+    },
+    {
+      "name": "ADV_Cool",
+      "shapes": {
+        "Face_.Eyelids_Angry": 28,
+        "Face_.Eyelids_Open": 33,
+        "Brow_.Eyebrow_Angry": 36,
+        "Brow_.Eyebrow_Down_L": 16,
+        "Brow_.Eyebrow_Down_R": 16,
+        "EyeShadow_.Eyelids_Angry": 28,
+        "EyeShadow_.Eyelids_Open": 33
+      },
+      "description": "Cool系"
+    },
+    {
+      "name": "ADV_SETSUNAI",
+      "shapes": {
+        "Face_.Eyelids_Smile": 53,
+        "Face_.Eyelids_Sad": 17,
+        "Face_.Eyelids_Sulk": 23,
+        "Brow_.Eyebrow_Up_L": 19,
+        "Brow_.Eyebrow_Up_R": 19,
+        "Brow_.Eyebrow_Akirewarai": 58,
+        "EyeShadow_.Eyelids_Smile": 53,
+        "EyeShadow_.Eyelids_Sad": 17,
+        "EyeShadow_.Eyelids_Sulk": 23
+      },
+      "description": "切ない"
+    },
+    {
+      "name": "ADV_KOMARIEGAO-Close",
+      "shapes": {
+        "Face_.Eyelids_BitterSmile": 100,
+        "Brow_.Eyebrow_Down_L": 73,
+        "Brow_.Eyebrow_Down_R": 73,
+        "Brow_.Eyebrow_Akirewarai": 84,
+        "EyeShadow_.Eyelids_BitterSmile": 100
+      },
+      "description": "困り笑顔閉じ目"
+    },
+    {
+      "name": "ADV_SHOCK",
+      "shapes": {
+        "Face_.Eyelids_Angry": 33,
+        "Face_.Eyelids_Open": 100,
+        "Brow_.Eyebrow_Sad": 38,
+        "Brow_.Eyebrow_Up_L": 9,
+        "Brow_.Eyebrow_Up_R": 9,
+        "Brow_.Eyebrow_Doubt": 37,
+        "Eye_.Eyelids_pupil": 10,
+        "Eye_.Eyelids_pupilSquash": 42,
+        "EyeShadow_.Eyelids_Angry": 33,
+        "EyeShadow_.Eyelids_Open": 100
+      },
+      "description": "ショック"
+    },
+    {
+      "name": "ADV_TSUKARE",
+      "shapes": {
+        "Face_.Eyelids_Punsuka": 60,
+        "Brow_.Eyebrow_Smile_L": 80,
+        "Brow_.Eyebrow_Smile_R": 80,
+        "Brow_.Eyebrow_Up_L": 26,
+        "Brow_.Eyebrow_Up_R": 26,
+        "EyeShadow_.Eyelids_Punsuka": 60
+      },
+      "description": "充電切れ"
+    },
+    {
+      "name": "ADV_ODOROKI_small",
+      "shapes": {
+        "Face_.Eyelids_Open": 57,
+        "Brow_.Eyebrow_Smile_L": 42,
+        "Brow_.Eyebrow_Smile_R": 42,
+        "Brow_.Eyebrow_Donbiki": 27,
+        "Eye_.Eyelids_pupil": 5,
+        "Eye_.Eyelids_pupilSquash": 45,
+        "EyeShadow_.Eyelids_Open": 57
+      },
+      "description": "驚き小"
+    },
+    {
+      "name": "ADV_KYOTON",
+      "shapes": {
+        "Face_.Eyelids_Smile": 28,
+        "Face_.Eyelids_Donbiki": 44,
+        "Face_.Mouth_Down": 76,
+        "Face_.Mouth_Drowse": 100,
+        "Face_.Mouth_Doubt": 13,
+        "Brow_.Eyebrow_Up_L": 15,
+        "Brow_.Eyebrow_Up_R": 15,
+        "Brow_.Eyebrow_Drowse": 32,
+        "Brow_.Eyebrow_Donbiki": 44,
+        "EyeShadow_.Eyelids_Smile": 28,
+        "EyeShadow_.Eyelids_Donbiki": 44
+      },
+      "description": "きょとん"
+    },
+    {
+      "name": "ADV_AWATERU",
+      "shapes": {
+        "Face_.Eyelids_Open": 71,
+        "Brow_.Eyebrow_Sad": 65,
+        "Brow_.Eyebrow_Up_L": 16,
+        "Brow_.Eyebrow_Up_R": 16,
+        "Brow_.Eyebrow_Drowse": 39,
+        "Brow_.Eyebrow_Donbiki": 25,
+        "Eye_.Eyelids_pupil": 8,
+        "EyeShadow_.Eyelids_Open": 71
+      },
+      "description": "慌てる"
+    }
+  ]
+}

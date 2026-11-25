@@ -1,0 +1,56 @@
+{
+  "_comment": "Series-specific terms that JMdict does not cover. Ranked ahead of JMdict entries for the same text. Terms with kanji are indexed by their kanji spelling only unless indexKana is true.",
+  "tags": {
+    "char": "Link! Like! Love Live! character",
+    "place": "place name",
+    "org": "organization / school",
+    "unit": "school idol unit"
+  },
+  "terms": [
+    { "kanji": ["日野下花帆"], "kana": ["ひのしたかほ"], "pos": ["char"], "gloss": ["Kaho Hinoshita (103rd-term first-year; Cerise Bouquet)"] },
+    { "kanji": ["花帆"], "kana": ["かほ"], "pos": ["char"], "gloss": ["Kaho (Kaho Hinoshita)"] },
+    { "kanji": ["日野下"], "kana": ["ひのした"], "pos": ["char"], "gloss": ["Hinoshita (Kaho's family name)"] },
+
+    { "kanji": ["村野さやか"], "kana": ["むらのさやか"], "pos": ["char"], "gloss": ["Sayaka Murano (103rd-term first-year; DOLLCHESTRA)"] },
+    { "kana": ["さやか"], "pos": ["char"], "gloss": ["Sayaka (Sayaka Murano)"] },
+    { "kanji": ["村野"], "kana": ["むらの"], "pos": ["char"], "gloss": ["Murano (Sayaka's family name)"] },
+    { "kana": ["さや"], "pos": ["char"], "gloss": ["Saya (Tsuzuri's nickname for Sayaka)"] },
+
+    { "kanji": ["大沢瑠璃乃"], "kana": ["おおさわるりの"], "pos": ["char"], "gloss": ["Rurino Osawa (103rd-term first-year; Mira-Cra Park!)"] },
+    { "kanji": ["瑠璃乃"], "kana": ["るりの"], "pos": ["char"], "gloss": ["Rurino (Rurino Osawa)"] },
+
+    { "kanji": ["乙宗梢"], "kana": ["おとむねこずえ"], "pos": ["char"], "gloss": ["Kozue Otomune (102nd-term second-year; Cerise Bouquet)"] },
+    { "kanji": ["梢"], "kana": ["こずえ"], "pos": ["char"], "gloss": ["Kozue (Kozue Otomune)"] },
+    { "kanji": ["乙宗"], "kana": ["おとむね"], "pos": ["char"], "gloss": ["Otomune (Kozue's family name)"] },
+
+    { "kanji": ["夕霧綴理"], "kana": ["ゆうぎりつづり"], "pos": ["char"], "gloss": ["Tsuzuri Yugiri (102nd-term second-year; DOLLCHESTRA)"] },
+    { "kanji": ["綴理"], "kana": ["つづり"], "pos": ["char"], "gloss": ["Tsuzuri (Tsuzuri Yugiri)"] },
+
+    { "kanji": ["藤島慈"], "kana": ["ふじしまめぐみ"], "pos": ["char"], "gloss": ["Megumi Fujishima (102nd-term second-year; Mira-Cra Park!)"] },
+    { "kanji": ["慈"], "kana": ["めぐみ"], "pos": ["char"], "gloss": ["Megumi (Megumi Fujishima)"] },
+    { "kanji": ["藤島"], "kana": ["ふじしま"], "pos": ["char"], "gloss": ["Fujishima (Megumi's family name)"] },
+
+    { "kanji": ["百生吟子"], "kana": ["ももせぎんこ"], "pos": ["char"], "gloss": ["Ginko Momose (104th-term first-year; Cerise Bouquet)"] },
+    { "kanji": ["吟子"], "kana": ["ぎんこ"], "pos": ["char"], "gloss": ["Ginko (Ginko Momose)"] },
+    { "kanji": ["徒町小鈴"], "kana": ["かちまちこすず"], "pos": ["char"], "gloss": ["Kosuzu Kachimachi (104th-term first-year; DOLLCHESTRA)"] },
+    { "kanji": ["小鈴"], "kana": ["こすず"], "pos": ["char"], "gloss": ["Kosuzu (Kosuzu Kachimachi)"] },
+    { "kanji": ["安養寺姫芽"], "kana": ["あんようじひめ"], "pos": ["char"], "gloss": ["Hime Anyoji (104th-term first-year; Mira-Cra Park!)"] },
+    { "kanji": ["姫芽"], "kana": ["ひめ"], "pos": ["char"], "gloss": ["Hime (Hime Anyoji)"] },
+    { "kana": ["セラス"], "pos": ["char"], "gloss": ["Ceras (Ceras Yanagida Lilienfeld; 105th-term first-year)"] },
+    { "kanji": ["桂城泉"], "kana": ["かつらぎいずみ"], "pos": ["char"], "gloss": ["Izumi Katsuragi (105th-term first-year)"] },
+    { "kanji": ["大賀美沙知"], "kana": ["おおがみさち"], "pos": ["char"], "gloss": ["Sachi Ogami (Hasunosora School Idol Club alumna)"] },
+    { "kanji": ["沙知"], "kana": ["さち"], "pos": ["char"], "gloss": ["Sachi (Sachi Ogami)"] },
+
+    { "kanji": ["蓮ノ空女学院"], "kana": ["はすのそらじょがくいん"], "pos": ["org"], "gloss": ["Hasunosora Girls' High School (boarding school in Kanazawa, Ishikawa)"] },
+    { "kanji": ["蓮ノ空"], "kana": ["はすのそら"], "pos": ["org"], "gloss": ["Hasunosora (lit. \"lotus sky\"); short for Hasunosora Girls' High School"] },
+    { "kana": ["スクールアイドル"], "pos": ["n"], "gloss": ["school idol"] },
+    { "kana": ["スクールアイドルクラブ"], "pos": ["org"], "gloss": ["School Idol Club"] },
+    { "kana": ["スリーズブーケ"], "pos": ["unit"], "gloss": ["Cerise Bouquet (school idol unit)"] },
+    { "kana": ["みらくらぱーく"], "pos": ["unit"], "gloss": ["Mira-Cra Park! (school idol unit)"] },
+
+    { "kanji": ["金沢"], "kana": ["かなざわ"], "pos": ["place"], "gloss": ["Kanazawa (capital of Ishikawa Prefecture)"] },
+    { "kanji": ["金沢市"], "kana": ["かなざわし"], "pos": ["place"], "gloss": ["Kanazawa City"] },
+    { "kanji": ["金沢駅"], "kana": ["かなざわえき"], "pos": ["place"], "gloss": ["Kanazawa Station"] },
+    { "kanji": ["石川県"], "kana": ["いしかわけん"], "pos": ["place"], "gloss": ["Ishikawa Prefecture"] }
+  ]
+}

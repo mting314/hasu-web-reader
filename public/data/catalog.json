@@ -1,0 +1,81 @@
+{
+  "episodes": [
+    {
+      "scriptId": "10300101",
+      "seriesId": "103001",
+      "term": "103rd Term (2023)",
+      "month": "April",
+      "seriesTitleJp": "第1話『花咲きたい！』",
+      "seriesTitleEn": "Episode 1: \"I Want to Bloom!\"",
+      "partTitleJp": "PART 1",
+      "partTitleEn": "PART 1 — Arrival in Kanazawa & Bus Ride",
+      "descriptionJp": "花咲く高校生活を夢見る花帆。入学した蓮ノ空女学院は思い描いていた環境とはほど遠かったが、スクールアイドルクラブの梢と出会い……。",
+      "descriptionEn": "Dreaming of a blooming high school life, Kaho boards the bus from Kanazawa Station alongside fellow first-year Sayaka Murano—only to discover Hasunosora is deep in the mountains.",
+      "totalTurns": 138,
+      "totalDurationSec": 798.99,
+      "translationSources": [
+        {
+          "id": "en_curated",
+          "lang": "en",
+          "label": "English (Hasu-KO, edited for dub)",
+          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/en/story/10300101",
+          "homepage": "https://hasu-ko.vercel.app/en/",
+          "note": "Hasu-KO's unofficial English translation with line breaks merged and minor edits for the hasu-dub voice dub."
+        },
+        {
+          "id": "en_hasuko",
+          "lang": "en",
+          "label": "English (Hasu-KO)",
+          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/en/story/10300101",
+          "homepage": "https://hasu-ko.vercel.app/en/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "ko_hasuko",
+          "lang": "ko",
+          "label": "한국어 (Hasu-KO)",
+          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/story/10300101",
+          "homepage": "https://hasu-ko.vercel.app/",
+          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
+        }
+      ]
+    },
+    {
+      "scriptId": "10300102",
+      "seriesId": "103001",
+      "term": "103rd Term (2023)",
+      "month": "April",
+      "seriesTitleJp": "第1話『花咲きたい！』",
+      "seriesTitleEn": "Episode 1: \"I Want to Bloom!\"",
+      "partTitleJp": "PART 2",
+      "partTitleEn": "PART 2 — Fateful Encounter with Kozue",
+      "descriptionJp": "厳格な寮の規則に絶望し脱獄を企てる花帆は、夜の学院で舞い踊る乙宗梢と出会う。",
+      "descriptionEn": "Despairing over the strict dorm rules, Kaho attempts a 'jailbreak' and encounters Kozue Otomune practicing as a school idol.",
+      "totalTurns": 132,
+      "totalDurationSec": 735.3,
+      "translationSources": [
+        {
+          "id": "en_hasuko",
+          "lang": "en",
+          "label": "English (Hasu-KO)",
+          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/en/story/10300102",
+          "homepage": "https://hasu-ko.vercel.app/en/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "ko_hasuko",
+          "lang": "ko",
+          "label": "한국어 (Hasu-KO)",
+          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/story/10300102",
+          "homepage": "https://hasu-ko.vercel.app/",
+          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
+        }
+      ]
+    }
+  ]
+}
