@@ -114,12 +114,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 8,
-        "props": 5,
+        "props": 6,
         "motions": 93,
         "bgm": 5,
         "se": 9,
         "voices": 107,
-        "total": 231
+        "total": 232
       },
       "castCharacters": [
         {

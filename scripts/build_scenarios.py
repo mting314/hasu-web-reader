@@ -767,11 +767,13 @@ def compile_script(
             pos = parse_vec(args[2], [0.0, 0.0, 0.0]) if len(args) >= 3 else [0.0, 0.0, 0.0]
             scale = parse_vec(args[3], [1.0, 1.0, 1.0]) if len(args) >= 4 else [1.0, 1.0, 1.0]
             rot = parse_vec(args[4], [0.0, 0.0, 0.0]) if len(args) >= 5 else [0.0, 0.0, 0.0]
-            pinfo = assets_by_id.get(prop_id)
-            glb_rel = f"3d/{(pinfo or {}).get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
-            if not pinfo or not asset_in_store(glb_rel):
-                # No model for this prop in our store (e.g. ppadv006_pamphlet isn't in the catalog):
-                # leave it off the stage rather than shipping a reference that can only 404.
+            # props missing from hamproductions' index (ppadv006_pamphlet) are exported from the raw
+            # data by scripts/export_costume.py to the same layout: ppadv/<id>/<id>.glb
+            pinfo = assets_by_id.get(prop_id) or {}
+            glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
+            if not asset_in_store(glb_rel):
+                # No model for this prop in our store: leave it off the stage rather than
+                # shipping a reference that can only 404.
                 MISSING_ASSETS.setdefault(glb_rel, script_id)
                 state["props"].pop(alias, None)  # the slot is emptied, not left with an older prop
                 continue

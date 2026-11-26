@@ -17,8 +17,12 @@ The GLB holds:
 Conversion matches the motion GLBs: position (-x, y, z), rotation (x, -y, -z, w), triangle winding
 reversed, tangent w negated, inverse bind matrices mirrored.
 
+Story props (`ppadv*`) are prefab bundles too, drawn by MeshRenderers (the mesh on the GameObject's
+MeshFilter, no bones), and export the same way into the props folder.
+
 Usage:
   uv run scripts/export_costume.py 3d_costume_1001103101 [...] [--out public/assets/3d/costume]
+  uv run scripts/export_costume.py ppadv006_pamphlet --out public/assets/3d/ppadv
 """
 
 from __future__ import annotations
@@ -236,8 +240,19 @@ class CostumeExporter:
     # --- skinned meshes -------------------------------------------------------------------------
     def renderers(self):
         for obj in self.env.objects:
-            if obj.type.name == "SkinnedMeshRenderer" and obj.assets_file.parent.name == self.costume_file:
+            if obj.type.name in ("SkinnedMeshRenderer", "MeshRenderer") and obj.assets_file.parent.name == self.costume_file:
                 yield obj
+
+    def mesh_of(self, robj, tt):
+        """A SkinnedMeshRenderer holds its mesh; a MeshRenderer draws its GameObject's MeshFilter's."""
+        if "m_Mesh" in tt:
+            return self.resolve(robj.assets_file, tt["m_Mesh"])
+        go = robj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
+        for c in go["m_Component"]:
+            comp = self.resolve(robj.assets_file, c["component"])
+            if comp is not None and comp.type.name == "MeshFilter":
+                return self.resolve(comp.assets_file, comp.read_typetree()["m_Mesh"])
+        return None
 
     def add_renderer(self, robj) -> None:
         tt = robj.read_typetree()
@@ -245,7 +260,7 @@ class CostumeExporter:
         go = go_obj.read_typetree()
         tr_pptr = next(c["component"] for c in go["m_Component"] if self.resolve(robj.assets_file, c["component"]).type.name == "Transform")
         node_idx = self.node_of.get((robj.assets_file.name, tr_pptr["m_PathID"]))
-        mesh_obj = self.resolve(robj.assets_file, tt["m_Mesh"])
+        mesh_obj = self.mesh_of(robj, tt)
         if node_idx is None or mesh_obj is None:
             print(f"  [skip] renderer on {go['m_Name']}: no node/mesh")
             return
@@ -271,7 +286,7 @@ class CostumeExporter:
             if col.max() > 1.0:
                 col = col / 255.0
             attrs["COLOR_0"] = self.glb.accessor(col[:, :4] if col.shape[1] >= 4 else col, "VEC4" if col.shape[1] >= 4 else "VEC3")
-        bones = [self.node_of.get(self._tkey(robj.assets_file, b)) for b in tt["m_Bones"]]
+        bones = [self.node_of.get(self._tkey(robj.assets_file, b)) for b in tt.get("m_Bones", [])]
         skin_idx = None
         if bones and all(b is not None for b in bones):
             if h.m_BoneWeights:
@@ -301,7 +316,7 @@ class CostumeExporter:
             g["skins"].append({"joints": bones, "inverseBindMatrices": self.glb.accessor(ibm_cm, "MAT4"),
                                "name": go["m_Name"]})
             skin_idx = len(g["skins"]) - 1
-        elif tt["m_Bones"]:
+        elif tt.get("m_Bones"):
             print(f"  [warn] {go['m_Name']}: bones outside the costume hierarchy, exported unskinned")
         # morph targets from blendshape channels (last frame of each channel = full weight)
         targets, names = [], []
@@ -348,7 +363,8 @@ class CostumeExporter:
         if not tt.get("m_Enabled", 1):
             node.setdefault("extras", {})["rendererEnabled"] = False
         # Unity draws a skinned mesh in its root bone's space: that is the shaders' "object space"
-        root_bone = self.node_of.get(self._tkey(robj.assets_file, tt["m_RootBone"])) if tt["m_RootBone"]["m_PathID"] else None
+        root_pptr = tt.get("m_RootBone")
+        root_bone = self.node_of.get(self._tkey(robj.assets_file, root_pptr)) if root_pptr and root_pptr["m_PathID"] else None
         if root_bone is not None:
             node.setdefault("extras", {})["rootBone"] = g["nodes"][root_bone]["name"]
 
