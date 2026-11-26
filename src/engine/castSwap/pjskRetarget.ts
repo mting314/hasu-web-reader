@@ -75,7 +75,7 @@ interface Pair {
 }
 
 /** `node`'s transform relative to `root`, from the local transforms on the way up. */
-function rootSpace(root: THREE.Object3D, node: THREE.Object3D): THREE.Matrix4 {
+export function rootSpace(root: THREE.Object3D, node: THREE.Object3D): THREE.Matrix4 {
   const m = new THREE.Matrix4();
   for (let n: THREE.Object3D | null = node; n && n !== root; n = n.parent) {
     n.updateMatrix();
@@ -88,7 +88,7 @@ function rootSpace(root: THREE.Object3D, node: THREE.Object3D): THREE.Matrix4 {
  * The bone's bind (rest) transform relative to `root`, from a skin's inverse bind matrix: the
  * source rig is usually mid-motion when a swap is attached, so its current pose isn't the rest.
  */
-function bindSpace(root: THREE.Object3D, bone: THREE.Object3D): THREE.Matrix4 | null {
+export function bindSpace(root: THREE.Object3D, bone: THREE.Object3D): THREE.Matrix4 | null {
   let found: THREE.Matrix4 | null = null;
   root.traverse((n) => {
     if (found || !(n as THREE.SkinnedMesh).isSkinnedMesh) return;
