@@ -12,7 +12,9 @@ dependencies = [
 [dependency-groups]
 # wordfreq: only to regenerate data_cache/wordfreq_ja.json (the cached table is committed).
 # pyyaml: build_story_index.py reads the decoded master data (link-like-diff YAML).
+# py7zr: extract_cri_banks.py streams the raw-asset dump (llll-assets-raw.7z).
 data = [
+    "py7zr>=1.1",
     "pyyaml>=6.0.4",
     "wordfreq>=3",
 ]

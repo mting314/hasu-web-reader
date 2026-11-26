@@ -263,6 +263,11 @@ def cache_scripts(script_ids: list[str]) -> None:
             print(f"[BGM] Copied local {local_src.name} -> {dest.relative_to(ROOT_DIR)}")
         elif not dest.exists():
             tasks.append((f"bgm/{bgm_id}.mp3", dest))
+        # the re-export from the game's CRI banks with its loop points (scripts/export_bgm.py)
+        webm = PUBLIC_BGM_DIR / f"{bgm_id}.webm"
+        if not webm.exists():
+            tasks.append((f"bgm/{bgm_id}.webm", webm))
+            optional.add(webm)
 
     # Deduplicate tasks by destination path
     unique_tasks: dict[Path, str] = {}

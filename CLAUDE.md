@@ -95,7 +95,7 @@ loads and `fetch()` as a backstop. `VITE_REMOTE_ASSET_PREFIXES` limits which pat
 story/backgrounds/story_bg_image_NNN.webp            2D backgrounds (000 = none)
 story/voice/vo_adv_<scriptId>_<seq4>_m<charId>_01[@<name>].webm   voice (Opus)
 sound/effects/se_adv_<name>_NNNN.webm                sound effects
-bgm/bgm_adv_<mood>_NNNN.mp3                          music (script ids like BgmAdvMorning0001)
+bgm/bgm_adv_<mood>_NNNN.webm                         music from the game's CRI banks (+ older .mp3)
 assets/charaicon/charamini_icon_face_sd_<charId>_01.webp
 ```
 
@@ -227,10 +227,25 @@ All motion GLBs in the store are exported from the raw data by `scripts/export_m
 (see "Converting motions" below). The 127 older hamproductions-derived files are kept only as a
 local backup in `.inspect-tmp/hamproductions-motions-backup/`; don't use them as a reference.
 
-**Audio.** Voice and SE are Opus `.webm`, BGM is `.mp3`. Several exported "ambience" SEs are
+**Audio.** Voice and SE are Opus `.webm`; BGM is Opus `.webm` re-exported from the game (see BGM loops), else the older `.mp3`. Several exported "ambience" SEs are
 sub-second fragments (e.g. `se_adv_ambience_classroom_0001` is one 0.48 s tap); looping those
 sounds like endless footsteps, so the build only loops SEs ≥ 3 s (durations cached in
 `data_cache/se_durations.json`).
+
+**BGM loops.** The game plays BGM through CRI ADX2 (`CriAcb BgmAdvMorning0001`, cue
+`Morning_0001`, path `/BGM/adv/bgm_adv_morning_0001.acb`): an ACB cue sheet whose HCA wave
+streams from an AWB bank, with the loop region in the HCA header. The player plays from the
+start and jumps from loop end back to loop start. The old MP3s carry no loop data, start with
+24–62 ms of encoder silence, and some have an intro, so `<audio loop>` paused at every wrap and
+replayed the intro. `scripts/extract_cri_banks.py` streams `llll-assets-raw.7z` (bucket `dump/`)
+and keeps only the CRI banks (`@UTF` / `AFS2` headers; the raw names are hashes, the real names
+are in an encrypted on-device catalog). `scripts/export_bgm.py` finds each BGM's ACB by cue name,
+pairs its AWB (the ACB embeds the AWB's `AFS2` header), decodes it with vgmstream's wasm build
+under node (`scripts/vgmstream_wasm.cjs`; native binaries are blocked on this Mac), and writes
+`bgm/<id>.webm` (Opus, 48 kHz like the HCA) plus the loop in samples to
+`data_cache/bgm_loops.json`. The build sets `audio.bgmLoop` (seconds) and `src/engine/bgmLoop.ts`
+loops an `AudioBufferSourceNode` with `loopStart`/`loopEnd`, which is also what Cleista does
+(`audio/native-loop.js`). Tracks without a re-export still use the MP3, looped whole.
 
 ## Story scripts (`../hasu-dub/story_main_txt/story_main_<scriptId>.txt`)
 
