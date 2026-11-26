@@ -177,6 +177,9 @@ def cache_scripts(script_ids: list[str]) -> None:
     # 2. Costumes & Props (GLB + extraGlbs + textures + textureMap)
     for model_id in sorted(costumes | props):
         info = assets_by_id.get(model_id)
+        if not info and model_id in costumes:
+            # exported from the raw data by scripts/export_costume.py, same layout as the index
+            info = {"glbPath": f"costume/{model_id}/{model_id}.glb", "category": "costume"}
         if not info:
             print(f"[WARN] Model ID {model_id} not found in model_viewer_context.json")
             continue
@@ -204,6 +207,9 @@ def cache_scripts(script_ids: list[str]) -> None:
                 continue
             tex_rel = f"3d/{tex_dir}{tex}"
             tasks.append((tex_rel, PUBLIC_ASSETS_DIR / tex_rel))
+            if info["category"] == "costume":
+                # only the old hamproductions GLBs use it; re-exported ones embed every texture
+                optional.add(PUBLIC_ASSETS_DIR / tex_rel)
 
         tmap = info.get("textureMap") or {}
         for mat_entry in tmap.values():

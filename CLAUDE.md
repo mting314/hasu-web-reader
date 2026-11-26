@@ -214,7 +214,9 @@ after one frame), so anything that edits bones after `mixer.update` must put the
 back before the next update; and starting/stopping actions inside a mixer `finished` event
 makes the mixer skip an action that frame. Earlier attempts that juggled several weighted
 actions popped or sagged toward the rest pose whenever a switch interrupted another.
-Breathing isn't reproduced yet.
+Breathing (`setBreathing`) plays the motion's `m_breathing@l` as a separate additive action
+(`THREE.AnimationUtils.makeClipAdditive`) at the command's weight, keeping its phase across
+motion switches.
 
 Tracks target a reference character's bones (`KahDeA_*` and `Kah_*`). `retargetMotionClips`
 renames them to the costume's prefix, skips spring (`SP_*`) and hair bones when the characters
@@ -471,8 +473,13 @@ loading gates, fullscreen layout, pause-on-hide/scroll, line-list scrolling, con
 ## Known gaps (episode 1)
 
 The build prints referenced assets that aren't in the store. Currently unavailable or wrong:
-- only the four episode-1 costumes are re-exported with `scripts/export_costume.py`; the bucket
-  still has the old ones
+- all 475 `3d_costume_*` prefabs (the 356 the story scripts use and the rest) are exported with
+  `scripts/export_costume.py` and in the bucket. 8 NPC costumes use shaders the reader doesn't
+  convert yet, so it hides those meshes (`prepareGameCostume` in `src/engine/gameToonMaterial.ts`
+  hides anything that isn't UberToonShader / CharacterEye / CharacterHighlight):
+  `MELPOT/Toon/UberToonShader_Eye` (eyes of Sachi's 6 costumes `3d_costume_10010/10020/10040/10070/
+  10080/2020 900701` and of `3d_costume_2007900801` / `2007901101`) and
+  `MELPOT/Toon/UberToonShader(HLSLMacros)` (Sachi's face, which shows the inside of her hair instead)
 - the reader starts at the first line, so a motion played during an episode's opening fade-in
   (e.g. line 11 of 10300102) isn't shown
 - secondary motion and helper-bone constraints aren't wired up in the reader yet. As documented
