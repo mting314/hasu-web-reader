@@ -49,17 +49,42 @@ class BundleIndex:
             return None
         return (self.base / rec["file"]).resolve()
 
+    @staticmethod
+    def read_bundle(path: Path) -> bytes:
+        """A bundle's bytes, without the 2-byte prefix the game puts before 'UnityFS'."""
+        data = path.read_bytes()
+        return data[2:] if data[2:9] == b"UnityFS" else data
+
     def load_env(self, container: str) -> UnityPy.Environment:
-        """Load the bundle that holds `container` (game bundles carry a 2-byte prefix before 'UnityFS')."""
+        """Load the bundle that holds `container`."""
         path = self.bundle_path(container)
         if path is None:
             raise KeyError(f"{container} not found in {self.path}")
-        data = path.read_bytes()
-        if data[2:9] == b"UnityFS":
-            data = data[2:]
         env = UnityPy.Environment()
-        env.load_file(data, name=path.name)
+        env.load_file(self.read_bundle(path), name=path.name)
         return env
+
+    def load_closure(self, container: str) -> tuple[UnityPy.Environment, str]:
+        """Load the bundle holding `container` plus every bundle it depends on (recursively, via the
+        CAB names in `deps`) into one environment, so cross-bundle references resolve. Returns the
+        environment and the starting bundle's file name."""
+        start = self.by_container[container]
+        seen, queue, files = set(), [start], []
+        while queue:
+            rec = queue.pop()
+            if rec["file"] in seen:
+                continue
+            seen.add(rec["file"])
+            files.append(rec)
+            for dep in rec.get("deps", []):
+                r = self.by_cab.get(dep.split(".")[0])
+                if r is not None:
+                    queue.append(r)
+        env = UnityPy.Environment()
+        for rec in files:
+            path = (self.base / rec["file"]).resolve()
+            env.load_file(self.read_bundle(path), name=path.name)
+        return env, (self.base / start["file"]).resolve().name
 
 
 def objects_of_type(env: UnityPy.Environment, type_name: str) -> list[dict]:

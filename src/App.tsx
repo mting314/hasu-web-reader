@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -32,6 +32,8 @@ import {
 } from "./components/StageCanvas";
 import { JapaneseLookupText } from "./components/JapaneseLookupText";
 import { CreditsPanel } from "./components/CreditsPanel";
+import { EpisodeTimeline } from "./components/EpisodeTimeline";
+import type { StoryIndex } from "./types/storyIndex";
 import { episodePartLabel, scriptIdFromSlug, slugForScriptId } from "./storySlug";
 import { rewriteAssetUrls } from "./remoteAssets";
 
@@ -95,6 +97,7 @@ function translateSceneComment(commentJp: string | null): string {
 
 export default function App() {
   const [catalog, setCatalog] = useState<EpisodeSummary[]>([]);
+  const [storyIndex, setStoryIndex] = useState<StoryIndex | null>(null);
   const [activeScriptId, setActiveScriptId] = useState<string>(() => scriptIdFromUrl() ?? "10300101");
   const [scenario, setScenario] = useState<ScenarioData | null>(null);
   const [currentTurnIndex, setCurrentTurnIndex] = useState<number>(() => {
@@ -154,6 +157,7 @@ export default function App() {
   });
   const stageContainerRef = useRef<HTMLDivElement>(null);
   const activeRowRef = useRef<HTMLDivElement>(null);
+  const scriptListRef = useRef<HTMLDivElement>(null);
 
   // Playback state: a line is "finished" once its voice (or reading time) is done.
   const [lineFinished, setLineFinished] = useState(false);
@@ -163,6 +167,14 @@ export default function App() {
   autoPlayRef.current = autoPlay;
   const autoJustEnabledRef = useRef(false);
   const pausedByHiddenTabRef = useRef(false);
+
+  // The game's activity-record index (series, parts, thumbnails) behind the episode timeline
+  useEffect(() => {
+    fetch("/data/story_index.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setStoryIndex(d))
+      .catch(() => setStoryIndex(null));
+  }, []);
 
   // Load episode catalog
   useEffect(() => {
@@ -302,16 +314,22 @@ export default function App() {
     [scenario]
   );
 
+  // The current line's stage (background, cast, motions, props) has loaded: until then advancing is
+  // blocked, so a first load can't skip ahead through lines whose models haven't appeared yet.
+  // (The turn object, not its index: line 0 of a newly picked episode must not count as ready.)
+  const [stageReadyTurn, setStageReadyTurn] = useState<DialogueTurn | null>(null);
+  const stageReady = !settings.enable3DStage || (currentTurn !== null && stageReadyTurn === currentTurn);
+
   /** Step to the next line immediately (Next button, auto mode). */
   const handleNext = useCallback(() => {
-    if (!scenario) return;
+    if (!scenario || !stageReady) return;
     if (currentTurnIndex < scenario.turns.length - 1) {
       navKindRef.current = "advance";
       setCurrentTurnIndex((i) => Math.min(i + 1, scenario.turns.length - 1));
     } else {
       setAutoPlay(false);
     }
-  }, [scenario, currentTurnIndex]);
+  }, [scenario, currentTurnIndex, stageReady]);
 
   /**
    * Two-stage advance (clicking the stage canvas or pressing Space/ArrowRight):
@@ -324,7 +342,7 @@ export default function App() {
       return;
     }
     handleNext();
-  }, [isTypewriterDone, handleNext]);
+  }, [isTypewriterDone, handleNext, stageReady]);
 
   const handlePrev = useCallback(() => {
     if (currentTurnIndex > 0) {
@@ -385,7 +403,7 @@ export default function App() {
 
   // Auto mode: advance once the line is finished.
   useEffect(() => {
-    if (!autoPlay || !lineFinished || !scenario || !currentTurn) return;
+    if (!autoPlay || !lineFinished || !scenario || !currentTurn || !stageReady) return;
     if (currentTurn.index >= scenario.turns.length - 1) {
       setAutoPlay(false);
       return;
@@ -406,7 +424,7 @@ export default function App() {
       setCurrentTurnIndex((i) => Math.min(i + 1, scenario.turns.length - 1));
     }, waitMs);
     return () => window.clearTimeout(timer);
-  }, [autoPlay, lineFinished, currentTurn, scenario, settings.autoPlayDelaySec, sharesVoiceWithNext]);
+  }, [autoPlay, lineFinished, currentTurn, scenario, settings.autoPlayDelaySec, sharesVoiceWithNext, stageReady]);
 
   // Keep a shared multi-line recording running past the split point only in auto mode
   useEffect(() => {
@@ -419,8 +437,9 @@ export default function App() {
     setAutoPlay(next);
   };
 
-  // Typewriter text reveal animation
-  useEffect(() => {
+  // Typewriter text reveal animation. A layout effect, so the reset to 0 lands before the new line
+  // is painted (otherwise it flashes fully revealed for a frame, with the previous line's count).
+  useLayoutEffect(() => {
     if (!currentTurn) return;
     if (settings.textSpeed >= 5) {
       setRevealedChars(9999);
@@ -440,14 +459,20 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [currentTurn, settings.textSpeed]);
 
-  // Auto-scroll active line in the bottom script
+  // Keep the active line in view in the script panel, scrolling as little as needed (like Cleista's
+  // syncLineChrome): a line below the visible area ends up at the panel's bottom, one above at its
+  // top, a visible one doesn't move. Only the panel scrolls: scrollIntoView would also scroll the
+  // page and pull the stage out of view.
   useEffect(() => {
-    if (activeRowRef.current) {
-      activeRowRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
-    }
+    const list = scriptListRef.current;
+    const row = activeRowRef.current;
+    if (!list || !row || !list.clientHeight) return;
+    const r = row.getBoundingClientRect();
+    const l = list.getBoundingClientRect();
+    let delta = 0;
+    if (r.top < l.top) delta = r.top - l.top;
+    else if (r.bottom > l.bottom) delta = r.bottom - l.bottom;
+    if (delta) list.scrollTo({ top: list.scrollTop + delta, behavior: "smooth" });
   }, [currentTurnIndex]);
 
   // Keyboard navigation (Right/Space = two-stage advance, Left = Prev)
@@ -909,51 +934,21 @@ export default function App() {
                 </a>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {catalog.map((ep) => {
-                const isSelected = ep.scriptId === activeScriptId;
-                return (
-                  <button
-                    key={ep.scriptId}
-                    type="button"
-                    onMouseEnter={() => {
-                      if (settings.enable3DStage && settings.prefetchMode !== "off") {
-                        prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
-                      }
-                    }}
-                    onFocus={() => {
-                      if (settings.enable3DStage && settings.prefetchMode !== "off") {
-                        prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
-                      }
-                    }}
-                    onClick={() => {
-                      setActiveScriptId(ep.scriptId);
-                      setSidebarOpen(false);
-                    }}
-                    className={`text-left rounded-xl border p-3 transition ${
-                      isSelected
-                        ? "border-[#7c9ff5]/80 bg-[#7c9ff5]/10"
-                        : "border-slate-800 bg-slate-950/60 hover:border-slate-700"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-[#9db8ff]">
-                        {ep.term} · {ep.month} · {episodePartLabel(ep.scriptId)}
-                      </span>
-                      <span className="text-[11px] text-slate-400">
-                        {ep.totalTurns} lines · {formatMmSs(ep.totalDurationSec)}
-                      </span>
-                    </div>
-                    <div className="mt-1 font-semibold text-sm text-white">
-                      {ep.seriesTitleEn} — {ep.partTitleEn}
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">
-                      {ep.descriptionEn}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+            <EpisodeTimeline
+              series={storyIndex?.series ?? []}
+              catalog={catalog}
+              activeScriptId={activeScriptId}
+              formatDuration={formatMmSs}
+              onPrewarm={(ep) => {
+                if (settings.enable3DStage && settings.prefetchMode !== "off") {
+                  prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
+                }
+              }}
+              onSelect={(ep) => {
+                setActiveScriptId(ep.scriptId);
+                setSidebarOpen(false);
+              }}
+            />
           </div>
         </div>
       )}
@@ -1025,6 +1020,7 @@ export default function App() {
                 resolution={settings.stageResolution}
                 audioMixer={AudioMixer}
                 onAdvance={handleStageOrKeyAdvance}
+                onStageReady={setStageReadyTurn}
               />
 
               {/* Floating White Pill Controls on Stage Canvas (exact pjsk.cleista.cc layout) */}
@@ -1246,7 +1242,9 @@ export default function App() {
                   type="button"
                   aria-label="Next line"
                   onClick={handleNext}
-                  disabled={currentTurnIndex >= scenario.turns.length - 1}
+                  disabled={!stageReady || currentTurnIndex >= scenario.turns.length - 1}
+                  aria-busy={!stageReady}
+                  title={stageReady ? undefined : "Loading this line's stage…"}
                   className="inline-flex items-center gap-1.5 rounded-full bg-[#7c9ff5] hover:bg-[#91b0fa] px-6 py-2 text-xs sm:text-sm font-bold text-slate-950 shadow-[0_0_22px_rgba(124,159,245,0.45)] disabled:opacity-40 transition"
                 >
                   <ChevronRight className="w-4 h-4 stroke-[2.5]" /> Next
@@ -1657,6 +1655,7 @@ export default function App() {
 
             {/* Script Listbox Container */}
             <div
+              ref={scriptListRef}
               role="listbox"
               aria-label="Script"
               className={`rounded-2xl border border-slate-800/90 bg-[#0c131f] overflow-y-auto divide-y divide-slate-800/50 shadow-xl ${

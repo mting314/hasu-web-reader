@@ -18,7 +18,8 @@ export interface ManifestCharacterAsset {
   costumeId: string;
   glbUrl: string;
   materialsUrl: string;
-  expressionsUrl: string;
+  /** the character's Tecotec.EmotionData (scripts/export_emotions.py) */
+  emotionDataUrl: string;
   eyeHighlightUrl: string | null;
   firstTurnIndex: number;
 }
@@ -105,7 +106,8 @@ export interface CharacterState {
   costumeId: string;
   glbUrl: string;
   eyeHighlightUrl: string | null;
-  expressionsUrl: string;
+  /** the character's Tecotec.EmotionData (scripts/export_emotions.py) */
+  emotionDataUrl: string;
   emotionController: string;
   visible: boolean;
   position: [number, number, number];
@@ -121,11 +123,21 @@ export interface CharacterState {
   motionStartTurn?: number;
   /** Started with キャラモーション即時再生 (or the default pose of a newly shown character) */
   motionImmediate?: boolean;
+  /** The command's playType: the state the motion starts in (0 in, 1 loop, 2 action) */
+  motionPlayType?: number;
+  /** Weight of the additive breathing layer; null = the game's default (0.2) */
+  motionBreathing?: number | null;
+  /** 即時再生: normalized time within the start state to jump to */
+  motionNormalizedTime?: number | null;
   lookAt: {
     mode: string;
     value: number | [number, number, number];
   };
   blush: number;
+  /** fade seconds of the [顔紅潮操作] that set `blush` (0 = the 0.1 s minimum) */
+  blushFadeSec?: number;
+  /** transition seconds of the [キャラ表情変更] that set `emotion` (null = the data's TransitionTime) */
+  emotionTransitionSec?: number | null;
   tears: boolean;
   attachedProps: string[];
 }
