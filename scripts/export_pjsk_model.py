@@ -207,50 +207,71 @@ class PjskModelExporter(CostumeExporter):
             self.rebind_head_meshes(body_skins, offset)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bundles", type=Path, required=True, help="pjsk_fetch.py's bundles/ directory")
-    ap.add_argument("--body", required=True, help="body bundle name")
-    ap.add_argument("--face", required=True, help="head bundle name")
-    ap.add_argument("--id", required=True, help="output model id, e.g. 01ichika")
-    ap.add_argument("--character", type=int, help="gameCharacters id (for height and names)")
-    ap.add_argument("--master", type=Path, help="pjsk_fetch.py's master/ directory")
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    a = ap.parse_args()
-
-    env = load_closure(a.bundles, [a.body, a.face])
+def export_one(bundles: Path, body: str, face: str, model_id: str, character: dict | None, out_dir: Path) -> None:
+    env = load_closure(bundles, [body, face])
     glb = Glb()
     glb.gltf["asset"]["generator"] = "hasu-web-reader export_pjsk_model.py"
-    ex = PjskModelExporter(env, a.body, a.face, glb)
+    ex = PjskModelExporter(env, body, face, glb)
     ex.run()
 
-    info = {"body": a.body, "face": a.face}
-    if a.character and a.master:
-        chars = json.loads((a.master / "gameCharacters.json").read_text())
-        c = next(c for c in chars if c["id"] == a.character)
-        info.update(characterId=c["id"], heightM=c["height"] / 100, givenName=c["givenName"],
-                    firstName=c["firstName"], unit=c["unit"])
+    info = {"body": body, "face": face}
+    if character:
+        info.update(characterId=character["id"], heightM=character["height"] / 100,
+                    name=" ".join(n for n in (character.get("givenName"), character.get("firstName")) if n),
+                    unit=character["unit"])
     world = ex.world_matrices()
     hip = ex.body_bone("Hip")
     info["restHipHeight"] = float(world[hip][1, 3]) if hip is not None else None
     root = glb.gltf["nodes"][glb.gltf["scenes"][0]["nodes"][0]]
     root.setdefault("extras", {})["pjsk"] = info
 
-    out = a.out / a.id / f"{a.id}.glb"
+    out = out_dir / model_id / f"{model_id}.glb"
     out.parent.mkdir(parents=True, exist_ok=True)
     glb.write(out)
     # The reader's cast picker lists every model in <out>/../../models.json (pjsk/models.json).
-    catalog = a.out.parent.parent / "models.json"
-    entries = [e for e in (json.loads(catalog.read_text()) if catalog.exists() else []) if e["id"] != a.id]
-    if "characterId" in info:
-        rel = out.relative_to(a.out.parent.parent.parent)  # path below public/assets/
-        entries.append({"id": a.id, "name": f"{info['givenName']} {info['firstName']}",
-                        "characterId": info["characterId"], "heightM": info["heightM"],
-                        "glbUrl": f"/assets/{rel.as_posix()}"})
+    catalog = out_dir.parent.parent / "models.json"
+    entries = [e for e in (json.loads(catalog.read_text()) if catalog.exists() else []) if e["id"] != model_id]
+    if character:
+        rel = out.relative_to(out_dir.parent.parent.parent)  # path below public/assets/
+        entries.append({"id": model_id, "name": info["name"], "characterId": info["characterId"],
+                        "heightM": info["heightM"], "glbUrl": f"/assets/{rel.as_posix()}"})
         catalog.write_text(json.dumps(sorted(entries, key=lambda e: e["id"]), ensure_ascii=False, indent=1) + "\n")
     g = glb.gltf
-    print(f"{a.id}: {len(g['nodes'])} nodes, {len(g.get('meshes', []))} meshes, {len(g.get('materials', []))} materials, "
+    print(f"{model_id}: {len(g['nodes'])} nodes, {len(g.get('meshes', []))} meshes, {len(g.get('materials', []))} materials, "
           f"{len(g.get('textures', []))} textures -> {out} ({out.stat().st_size / 1e6:.1f} MB)")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--bundles", type=Path, required=True, help="pjsk_fetch.py's bundles/ directory")
+    ap.add_argument("--master", type=Path, help="pjsk_fetch.py's master/ directory (heights, names)")
+    ap.add_argument("--defaults", action="store_true",
+                    help="every character's default look: body/<cc>/0001/<figure> + face/<cc>/0001, id = modelName")
+    ap.add_argument("--body", help="body bundle name")
+    ap.add_argument("--face", help="head bundle name")
+    ap.add_argument("--id", help="output model id, e.g. 01ichika")
+    ap.add_argument("--character", type=int, help="gameCharacters id")
+    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    a = ap.parse_args()
+    chars = {c["id"]: c for c in json.loads((a.master / "gameCharacters.json").read_text())} if a.master else {}
+
+    if a.defaults:
+        if not chars:
+            ap.error("--defaults needs --master")
+        model_root = a.bundles / "live_pv" / "model" / "characterv2"
+        for c in chars.values():
+            cc = f"{c['id']:02d}"
+            body_dir = model_root / "body" / cc / "0001"
+            bodies = sorted(body_dir.iterdir()) if body_dir.exists() else []
+            face = f"live_pv/model/characterv2/face/{cc}/0001"
+            if not bodies or not (a.bundles / face).exists():
+                print(f"[skip] {c['modelName']}: bundles not fetched")
+                continue
+            export_one(a.bundles, bodies[0].relative_to(a.bundles).as_posix(), face, c["modelName"], c, a.out)
+        return
+    if not (a.body and a.face and a.id):
+        ap.error("give --body, --face and --id, or --defaults")
+    export_one(a.bundles, a.body, a.face, a.id, chars.get(a.character), a.out)
 
 
 if __name__ == "__main__":

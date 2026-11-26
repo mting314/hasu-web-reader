@@ -135,6 +135,10 @@ def main() -> None:
     ap.add_argument("--asset-hash")
     ap.add_argument("--no-deps", action="store_true", help="get: skip the dependency closure")
     a = ap.parse_intermixed_args()
+    args: list[str] = []
+    for arg in a.args:  # "@file" = one argument per line
+        args += Path(arg[1:]).read_text().split() if arg.startswith("@") else [arg]
+    a.args = args
 
     if a.command == "ls":
         for prefix in a.args:
@@ -158,10 +162,7 @@ def main() -> None:
 
     cdn = Cdn(a.asset_version, a.asset_hash)
     print(f"asset version {cdn.asset_version}")
-    todo: list[str] = []
-    for arg in a.args:  # "@file" = one bundle name (or mirror folder, trailing "/" ok) per line
-        lines = Path(arg[1:]).read_text().split() if arg.startswith("@") else [arg]
-        todo += [n.rstrip("/") for n in lines]
+    todo = [n.rstrip("/") for n in a.args]  # mirror folder names (trailing "/") work as bundle names
     seen: set[str] = set()
     while todo:
         name = todo.pop(0)
