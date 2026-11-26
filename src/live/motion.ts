@@ -74,19 +74,35 @@ export interface Sample {
 }
 
 /** Interpolated state of one member at time t (seconds), or null outside the track. */
-export function sampleTrack(tr: MemberTrack, t: number, out?: Float32Array): Sample | null {
-  const n = tr.times.length;
-  if (n === 0 || t < tr.times[0] - 0.2 || t > tr.times[n - 1] + 0.2) return null;
+/** The frames around t and the blend between them, or null if t is outside the track (±0.2 s). */
+function bracket(times: Float32Array, t: number): [number, number, number] | null {
+  const n = times.length;
+  if (n === 0 || t < times[0] - 0.2 || t > times[n - 1] + 0.2) return null;
   let lo = 0;
   let hi = n - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (tr.times[mid] <= t) lo = mid;
+    if (times[mid] <= t) lo = mid;
     else hi = mid;
   }
-  const t0 = tr.times[lo];
-  const t1 = tr.times[hi];
-  const k = hi === lo || t1 <= t0 ? 0 : Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+  const t0 = times[lo];
+  const t1 = times[hi];
+  return [lo, hi, hi === lo || t1 <= t0 ? 0 : Math.min(1, Math.max(0, (t - t0) / (t1 - t0)))];
+}
+
+/** Root position only (no rotation or muscles), into out. */
+export function samplePosition(tr: MemberTrack, t: number, out: Vec3): boolean {
+  const b = bracket(tr.times, t);
+  if (!b) return false;
+  const [lo, hi, k] = b;
+  for (let c = 0; c < 3; c++) out[c] = tr.pos[lo * 3 + c] + (tr.pos[hi * 3 + c] - tr.pos[lo * 3 + c]) * k;
+  return true;
+}
+
+export function sampleTrack(tr: MemberTrack, t: number, out?: Float32Array): Sample | null {
+  const br = bracket(tr.times, t);
+  if (!br) return null;
+  const [lo, hi, k] = br;
   const p = (i: number, c: number) => tr.pos[i * 3 + c];
   const pos: Vec3 = [0, 1, 2].map((c) => p(lo, c) + (p(hi, c) - p(lo, c)) * k) as Vec3;
   const q = (i: number): Quat => [tr.rot[i * 4], tr.rot[i * 4 + 1], tr.rot[i * 4 + 2], tr.rot[i * 4 + 3]];
@@ -161,6 +177,16 @@ export class ChunkStore {
       }
     }
     return null;
+  }
+
+  /** A member's root position at t into out, if its chunk is loaded (cheap: no muscles). */
+  samplePosition(cid: number, t: number, out: Vec3): boolean {
+    const i = this.chunkAt(t);
+    for (const j of [i, i - 1, i + 1]) {
+      const tr = this.ready.get(j)?.get(cid);
+      if (tr && samplePosition(tr, t, out)) return true;
+    }
+    return false;
   }
 
   isReady(t: number): boolean {

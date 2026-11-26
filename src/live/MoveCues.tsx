@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { MEMBER_COLORS, type LiveStage } from "./LiveStage";
 import { activeMoves, describeMove, loadMoves, screenAngle, type MoveEvent, type MovesFile } from "./moves";
+import { fmt } from "./format";
 
 /**
  * Spin / walk markers in the choreo viewer's UI: ticks on the timeline scrubber and the early
@@ -22,11 +23,6 @@ export function useMoves(liveBase: string): MovesFile | null {
 }
 
 const KIND_LABEL = { spin: "Spin", turn: "Turn", walk: "Walk" } as const;
-
-function fmt(t: number): string {
-  const m = Math.floor(t / 60);
-  return `${m}:${(t - m * 60).toFixed(1).padStart(4, "0")}`;
-}
 
 /**
  * Markers on the scrubber for some members' moves: spins as dots above the bar, turns as short
@@ -86,7 +82,7 @@ const ARROWS = ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"];
  * up until the move ends, so a dancer can read it before she has to look away.
  */
 export function MoveCue({
-  events, cid, name, time, lead, mirror, stage,
+  events, cid, name, time, lead, mirror, split, stage,
 }: {
   events: MoveEvent[] | undefined;
   cid: number;
@@ -94,18 +90,20 @@ export function MoveCue({
   time: number;
   lead: number;
   mirror: boolean;
+  /** Split view: centre the cue over the front (left) half, whose camera its arrow describes. */
+  split: boolean;
   stage: LiveStage | null;
 }) {
   const cues = activeMoves(events, time, lead);
   if (!cues.length) return null;
   const color = MEMBER_COLORS[cid] ?? "#ffffff";
   return (
-    <div className="pointer-events-none absolute left-1/2 top-12 flex -translate-x-1/2 flex-col items-center gap-1.5">
+    <div className={`pointer-events-none absolute ${split ? "left-1/4" : "left-1/2"} top-12 flex -translate-x-1/2 flex-col items-center gap-1.5`}>
       {cues.map((e) => {
         const c = describeMove(e, time, lead, mirror);
         let glyph = c.glyph;
         if (e.kind === "walk" && e.from && e.to && stage) {
-          // the arrow points the way she'll travel on screen, from the current camera (and mirror)
+          // the arrow points the way she'll travel on screen, from the front camera (mirror included)
           const a = screenAngle(stage, e.from, e.to, mirror);
           if (a !== null) glyph = ARROWS[Math.round((((a * 180) / Math.PI + 360) % 360) / 45) % 8];
         }

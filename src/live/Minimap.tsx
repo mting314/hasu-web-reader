@@ -90,7 +90,8 @@ function buildMembers(stage: LiveStage, iconBase: string): MapMember[] {
     const color = MEMBER_COLORS[m.cid] ?? "#ffffff";
     const mm: MapMember = {
       cid: m.cid, m, color, ink: inkFor(color), label: labels[i], icon: null,
-      ahead: new Float32Array(RING * 2), keys: new Int32Array(RING).fill(-1), sx: NaN, sy: NaN,
+      // empty slots hold INT32_MIN: -1 is a real grid index when the playhead is just below 0
+      ahead: new Float32Array(RING * 2), keys: new Int32Array(RING).fill(-0x80000000), sx: NaN, sy: NaN,
     };
     const img = new Image();
     img.src = `${iconBase}/icon_charasymbol_${m.cid}.png`;
@@ -125,6 +126,9 @@ export default function Minimap({ stageRef, iconBase, mirror, onPick }: {
     const target: Bounds = { halfW: 0, z0: 0, z1: 0 };
     let shrinkSince: number | null = null;
     let last = performance.now();
+    let lastSig = "";
+    /** The view has stopped easing towards its bounds (redraws can be skipped while paused). */
+    let settled = false;
     const tmp = new THREE.Vector3();
     let dotFontPx = 0;
     let dotFont = "";
@@ -157,6 +161,15 @@ export default function Minimap({ stageRef, iconBase, mirror, onPick }: {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       const t = s.time;
+      // nothing to redraw while paused with the same view: skip until something changes
+      let icons = 0, vis = 0;
+      for (const mm of members) {
+        if (mm.icon) icons++;
+        vis = vis * 2 + (mm.m.visible ? 1 : 0);
+      }
+      const sig = `${t}|${s.follow}|${mirrorRef.current}|${icons}|${vis}`;
+      if (sig === lastSig && settled) return;
+      lastSig = sig;
       const g0 = Math.floor(t / STEP) + 1;
 
       // bounds of everyone on stage now and over the next AHEAD seconds
@@ -208,6 +221,8 @@ export default function Minimap({ stageRef, iconBase, mirror, onPick }: {
         view.z0 += (held.z0 - view.z0) * k;
         view.z1 += (held.z1 - view.z1) * k;
       }
+      settled = !!held && shrinkSince === null && Math.abs(held.halfW - view.halfW) < 1e-3
+        && Math.abs(held.z0 - view.z0) < 1e-3 && Math.abs(held.z1 - view.z1) < 1e-3;
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       if (canvas.width !== Math.round(W * dpr)) {

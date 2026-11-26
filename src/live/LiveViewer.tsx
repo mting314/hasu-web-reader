@@ -7,6 +7,7 @@ import { ChunkStore, type LiveIndex } from "./motion";
 import { LiveStage, MEMBER_COLORS, type CameraPreset } from "./LiveStage";
 import { PlaybackClock } from "./clock";
 import Minimap from "./Minimap";
+import { fmt } from "./format";
 import { MoveArrows, cueMemberFor, leadFor } from "./moves";
 import { MoveCue, MoveTicks, useMoves } from "./MoveCues";
 
@@ -54,13 +55,6 @@ const DEFAULTS: Settings = {
   split: false, minimap: true,
   moves: true,
 };
-
-function fmt(t: number | null): string {
-  if (t === null || !Number.isFinite(t)) return "--:--.-";
-  const m = Math.floor(Math.max(0, t) / 60);
-  const s = Math.max(0, t) - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
-}
 
 export default function LiveViewer() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -455,6 +449,7 @@ export default function LiveViewer() {
               time={time + offsetMs / 1000}
               lead={leadFor(rate)}
               mirror={mirror}
+              split={split}
               stage={stageRef.current}
             />
           )}

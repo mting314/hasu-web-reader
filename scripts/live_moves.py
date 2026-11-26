@@ -105,16 +105,19 @@ def read_tracks(live: Path, index: dict) -> dict[int, tuple[np.ndarray, np.ndarr
 
 
 def on_stage_spans(visibility: list[dict], end: float) -> list[tuple[float, float]]:
-    spans, since = [], None
+    """On-stage intervals, by the viewer's rule (LiveStage.visibleAt): visible until the first
+    event, then whatever the latest event at or before t says."""
+    spans, since = [], 0.0
     for e in sorted(visibility, key=lambda e: e["t"]):
         if e["visible"] and since is None:
             since = e["t"]
         elif not e["visible"] and since is not None:
-            spans.append((since, e["t"]))
+            if e["t"] > since:
+                spans.append((since, e["t"]))
             since = None
-    if since is not None:
+    if since is not None and end > since:
         spans.append((since, end))
-    return spans or [(0.0, end)]
+    return spans
 
 
 def gauss(x: np.ndarray, sigma_frames: float) -> np.ndarray:

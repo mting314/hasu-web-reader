@@ -112,6 +112,8 @@ interface Member {
 }
 
 const UNLIT = /^(Face|Eye|Brow|EyeHi|EyeShadow|EyeLens)/i;
+/** Reflection through the x = 0 plane. */
+const MIRROR_X = new THREE.Matrix4().makeScale(-1, 1, 1);
 const HIDDEN_MESHES = /^(EyeLens|EyeShadow)$/;
 
 export class LiveStage {
@@ -150,14 +152,18 @@ export class LiveStage {
   showFaces = true;
   private muscles = new Float32Array(MUSCLE_COUNT);
   /** Scratch for positionAt, which only needs the root. */
-  private aheadMuscles = new Float32Array(MUSCLE_COUNT);
+  private aheadPos: Vec3 = [0, 0, 0];
   private aheadRoot: Vec3 = [0, 0, 0];
   private gradient: THREE.DataTexture;
   private centre: Vec3;
   private disposed = false;
   private lastFrame = performance.now();
-  /** Set while rendering a mirrored view: swaps which winding three treats as front-facing. */
-  private flipWinding = false;
+  /**
+   * Draws the mirrored main view: the main camera's world matrix conjugated by the x mirror, looking
+   * at the scene scaled by -1 in x. That gives the mirror image of the main view, and since every
+   * object matrix is then mirrored, three flips triangle winding (culling, two-sided normals) itself.
+   */
+  private readonly mirrorCamera = new THREE.PerspectiveCamera();
 
   constructor(
     private container: HTMLElement,
@@ -175,12 +181,8 @@ export class LiveStage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // Mirroring negates the projection's x (see layout), which reverses the on-screen winding of every
-    // triangle. three only flips its front face for negative-determinant object matrices, so flip it
-    // here too; culling and gl_FrontFacing (two-sided normals) then stay right in the mirrored view.
-    const state = this.renderer.state;
-    const setMaterial = state.setMaterial;
-    state.setMaterial = (material, frontFaceCW) => setMaterial(material, !!frontFaceCW !== this.flipWinding);
+    this.mirrorCamera.matrixAutoUpdate = false;
+    this.mirrorCamera.matrixWorldAutoUpdate = false;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -244,8 +246,8 @@ export class LiveStage {
 
   /**
    * Viewports in CSS pixels: the whole canvas, or with split on the left half for the main camera
-   * and the right half for the back camera. Sets each camera's aspect and projection, mirrored for
-   * the main camera when `mirror` is on (rebuilt every frame, so toggling needs no extra call).
+   * and the right half for the back camera. Sets each camera's aspect and projection (every frame,
+   * so toggling split needs no extra call). The main view is mirrored at render time when `mirror`.
    */
   private layout(): { cam: THREE.PerspectiveCamera; x: number; w: number; h: number; mirror: boolean }[] {
     const { x: width, y: h } = this.renderer.getSize(new THREE.Vector2());
@@ -255,11 +257,6 @@ export class LiveStage {
     for (const v of views) {
       v.cam.aspect = Math.max(1, v.w) / Math.max(1, h);
       v.cam.updateProjectionMatrix();
-      if (v.mirror) {
-        const e = v.cam.projectionMatrix.elements; // negate clip-space x: the first row
-        e[0] = -e[0]; e[4] = -e[4]; e[8] = -e[8]; e[12] = -e[12];
-        v.cam.projectionMatrixInverse.copy(v.cam.projectionMatrix).invert();
-      }
     }
     return views;
   }
@@ -285,11 +282,25 @@ export class LiveStage {
     for (const v of views) {
       this.renderer.setViewport(v.x, 0, v.w, v.h);
       this.renderer.setScissor(v.x, 0, v.w, v.h);
-      this.prepareView(v.cam);
-      this.flipWinding = v.mirror;
-      this.renderer.render(this.scene, v.cam);
+      this.prepareView(v.cam); // in unmirrored stage space: the mirror is applied below
+      if (!v.mirror) {
+        this.renderer.render(this.scene, v.cam);
+        continue;
+      }
+      const mc = this.mirrorCamera;
+      mc.fov = v.cam.fov;
+      mc.near = v.cam.near;
+      mc.far = v.cam.far;
+      mc.aspect = v.cam.aspect;
+      mc.updateProjectionMatrix();
+      v.cam.updateMatrixWorld();
+      mc.matrixWorld.copy(MIRROR_X).multiply(v.cam.matrixWorld).multiply(MIRROR_X);
+      mc.matrixWorldInverse.copy(mc.matrixWorld).invert();
+      this.scene.scale.x = -1;
+      this.renderer.render(this.scene, mc);
+      this.scene.scale.x = 1;
+      this.scene.updateMatrixWorld(); // posing next frame reads world matrices
     }
-    this.flipWinding = false;
     this.renderer.setScissorTest(false);
   }
 
@@ -391,9 +402,8 @@ export class LiveStage {
   positionAt(cid: number, t: number, out: THREE.Vector3): boolean {
     const m = this.members.get(cid);
     if (!m || !this.visibleAt(m, t)) return false;
-    const s = this.store.sample(cid, t, this.aheadMuscles);
-    if (!s) return false;
-    const r = this.stageRoot(m, t, s.pos, this.aheadRoot);
+    if (!this.store.samplePosition(cid, t, this.aheadPos)) return false;
+    const r = this.stageRoot(m, t, this.aheadPos, this.aheadRoot);
     out.set(-r[0], r[1], r[2]); // toGltfT
     return true;
   }

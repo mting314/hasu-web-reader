@@ -151,14 +151,22 @@ export function describeMove(e: MoveEvent, t: number, lead: number, mirror: bool
   return { title, detail: notes.join(" · "), glyph, until, progress };
 }
 
-/** Screen-space angle (radians, 0 = right, counter-clockwise) of a floor vector seen through the stage camera. */
+/**
+ * Screen-space angle (radians, 0 = right, counter-clockwise) of a floor vector seen through the
+ * stage's main camera, or null if it's too short on screen or starts/ends behind the camera.
+ * The camera itself is never mirrored (LiveStage mirrors at render time), so flip x for `mirror`.
+ */
 export function screenAngle(stage: LiveStage, from: [number, number], to: [number, number], mirror: boolean): number | null {
-  const a = new THREE.Vector3(from[0], 0, from[1]).project(stage.camera);
-  const b = new THREE.Vector3(to[0], 0, to[1]).project(stage.camera);
-  let dx = b.x - a.x;
+  const cam = stage.camera;
+  const a = new THREE.Vector3(from[0], 0, from[1]);
+  const b = new THREE.Vector3(to[0], 0, to[1]);
+  const behind = (p: THREE.Vector3) => p.clone().applyMatrix4(cam.matrixWorldInverse).z >= 0;
+  if (behind(a) || behind(b)) return null;
+  a.project(cam);
+  b.project(cam);
+  const dx = (b.x - a.x) * cam.aspect * (mirror ? -1 : 1); // NDC x spans the width: scale to y's units
   const dy = b.y - a.y;
   if (Math.hypot(dx, dy) < 1e-4) return null;
-  if (mirror) dx = -dx;
   return Math.atan2(dy, dx);
 }
 
@@ -245,17 +253,15 @@ export class MoveArrows {
           });
           mesh = new THREE.Mesh(geom, mat);
           mesh.renderOrder = 5;
+          // the arc starts from the way she faces when the move begins (Unity heading: + = three.js -x)
+          if (e.kind !== "walk") mesh.rotation.y = -THREE.MathUtils.degToRad(e.facingFrom);
           this.meshes.set(e.id, mesh);
           this.group.add(mesh);
         }
         const until = e.start - t;
         // fade in over the lead-in, then hold while the move plays
         (mesh.material as THREE.MeshBasicMaterial).opacity = until > 0 ? 0.35 + 0.5 * (1 - until / lead) : 0.6;
-        if (e.kind !== "walk") {
-          // round her: follows her across the stage; starts from the way she faces when it begins
-          mesh.position.set(member.hips.x, 0, member.hips.z);
-          if (until > 0) mesh.rotation.y = Math.atan2(member.facing.x, member.facing.z);
-        }
+        if (e.kind !== "walk") mesh.position.set(member.hips.x, 0, member.hips.z); // round her, wherever she is
       }
     }
     for (const [id, mesh] of this.meshes) {
