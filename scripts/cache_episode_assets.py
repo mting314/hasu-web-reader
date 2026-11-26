@@ -11,10 +11,13 @@ Scans one or more raw ADV script files (story_main_<ScriptId>.txt), resolves all
   - Character mini portrait icons (charamini_icon_face_sd_<charId>_01.webp)
   - Story Voice WebMs (vo_adv_*.webm)
   - Sound Effect WebMs (se_adv_*.webm)
-  - Story BGM MP3s (copying from /Users/michaelting/github/hasu-dub/bgm/ first, then GCS)
+  - Story BGM MP3s (copying from /Users/michaelting/github/hasu-dub/bgm/ first, then the bucket)
+  - Per-costume toon material files (<costume>_materials.json), when published
 
-Downloads everything once with a thread pool into `public/assets/` so the web reader
-runs 100% against local static files without hammering GCS.
+Downloads everything once with a thread pool into `public/assets/` from our own asset
+bucket (gs://hasu-web-reader-assets, which mirrors the public/assets/ layout) so the web
+reader can run against local static files. Assets that aren't in the bucket yet have to be
+exported from the raw game data and uploaded with scripts/upload_assets_gcs.sh first.
 """
 
 from __future__ import annotations
@@ -22,13 +25,16 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import json
+import os
 import re
 import shutil
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-GCS_BASE = "https://storage.googleapis.com/llll-card"
+GCS_BASE = os.environ.get(
+    "HASU_ASSET_BASE_URL", "https://storage.googleapis.com/hasu-web-reader-assets"
+).rstrip("/")
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_CACHE_DIR = ROOT_DIR / "data_cache"
 PUBLIC_ASSETS_DIR = ROOT_DIR / "public" / "assets"
@@ -131,6 +137,7 @@ def cache_scripts(script_ids: list[str]) -> None:
             bgms.add(normalize_bgm_id(raw_bgm))
 
     tasks: list[tuple[str, Path]] = []
+    optional: set[Path] = set()  # may legitimately be absent from the bucket
 
     # 1. Motions metadata & Expression JSONs
     tasks.append((f"{GCS_BASE}/3d/metadata/motions.json", PUBLIC_ASSETS_DIR / "3d/metadata/motions.json"))
@@ -146,6 +153,11 @@ def cache_scripts(script_ids: list[str]) -> None:
             continue
         glb_rel = f"3d/{info['glbPath']}"
         tasks.append((f"{GCS_BASE}/{glb_rel}", PUBLIC_ASSETS_DIR / glb_rel))
+        if model_id in costumes and glb_rel.endswith(".glb"):
+            # toon material values exported from the game (scripts/export_toon_materials.py)
+            mat_rel = f"{glb_rel[:-len('.glb')]}_materials.json"
+            tasks.append((f"{GCS_BASE}/{mat_rel}", PUBLIC_ASSETS_DIR / mat_rel))
+            optional.add(PUBLIC_ASSETS_DIR / mat_rel)
 
         for extra in info.get("extraGlbs") or []:
             extra_rel = f"3d/{extra}"
@@ -217,7 +229,7 @@ def cache_scripts(script_ids: list[str]) -> None:
             shutil.copy2(local_src, dest)
             print(f"[BGM] Copied local {local_src.name} -> {dest.relative_to(ROOT_DIR)}")
         elif not dest.exists():
-            tasks.append((f"{GCS_BASE}/music/bgm-mp3/{bgm_id}.mp3", dest))
+            tasks.append((f"{GCS_BASE}/bgm/{bgm_id}.mp3", dest))
 
     # Deduplicate tasks by destination path
     unique_tasks: dict[Path, str] = {}
@@ -228,6 +240,7 @@ def cache_scripts(script_ids: list[str]) -> None:
     downloaded = 0
     cached = 0
     failed: list[tuple[str, str]] = []
+    not_published: list[str] = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
         futures = [pool.submit(download_task, url, dest) for dest, url in unique_tasks.items()]
@@ -238,10 +251,14 @@ def cache_scripts(script_ids: list[str]) -> None:
                     cached += 1
                 else:
                     downloaded += 1
+            elif ROOT_DIR / rel_path in optional:
+                not_published.append(rel_path)
             else:
                 failed.append((rel_path, msg))
 
     print(f"Done! Downloaded: {downloaded}, Already cached: {cached}, Failed: {len(failed)}")
+    if not_published:
+        print(f"  ({len(not_published)} optional file(s) not published yet, e.g. {not_published[0]})")
     for rel_path, msg in failed[:15]:
         print(f"  [WARN] {rel_path}: {msg}")
 

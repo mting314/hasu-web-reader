@@ -26,3 +26,13 @@ data_cache/*.png
 
 # OS / editor
 .DS_Store
+
+# Claude Code worktrees (separate checkouts)
+.claude/worktrees/
+
+# uv-managed Python environment (pyproject.toml / uv.lock)
+.venv/
+
+# Doc renders of game models. They live in gs://hasu-web-reader-assets/docs/media/
+# (scripts/upload_docs_media.sh) and the docs link the bucket copies.
+docs/media/

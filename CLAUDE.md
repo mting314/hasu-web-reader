@@ -1,0 +1,416 @@
+# hasu-web-reader — notes for agents
+
+Bilingual 3D story player for the *Link! Like! Love Live!* activity records (see README for
+setup). This file records what we've learned about how the game's assets work.
+
+## Ground rules
+
+- **Never pull from or reference hamproductions' `llll-card` GCS bucket.** Our assets live in
+  `public/assets/` locally and in `gs://hasu-web-reader-assets`. Missing assets get exported
+  from the raw game data (below) and uploaded, not fetched from third parties.
+- `public/assets/`, `data-inspect/`, `.inspect-tmp/`, `data_cache/jmdict/` and `docs/media/` are
+  git-ignored (game data / tens of GB, renders of game models). Never commit them. Images and
+  videos for the docs go to the public docs bucket: `scripts/upload_docs_media.sh` uploads
+  `docs/media/` to `gs://hasu-web-reader-docs/docs/media/`, and docs link
+  `https://storage.googleapis.com/hasu-web-reader-docs/docs/media/<file>`.
+- The user sometimes runs another agent in this repo at the same time. Check `git status`
+  before editing shared files; put separate work in a git worktree.
+- **Read the game's code before guessing a behavior.** The client's Il2Cpp dump is in
+  `data-inspect/client-dump/` (see "The game's code" below). If a question is "how does the game
+  do X" (blend times, what a command argument means, packet layouts), grep `dump.cs` for the class
+  and disassemble the method. Don't brute-force it from data or tune it by eye.
+- **Do not reinvent Unity, glTF, or Three.js from scratch.** Before writing custom solvers,
+  binary packers, or renderers, check the game's prefab `MonoBehaviour` data and use canonical
+  libraries:
+  - **Inspect prefab bundles (`3d_costume_<id>`), not just raw `__*.fbx` bundles.** The `.fbx`
+    containers only hold bare imported meshes/transforms/Avatars. The assembled character behavior
+    (secondary physics, colliders, twist/helper bone constraints, expression/blink controllers) is
+    serialized as `MonoBehaviour` components on the `3d_costume_<id>` prefab bundle and its `.asset`
+    / `.controller` dependencies (see "Costume prefabs and MonoBehaviours" below).
+  - **glTF / GLB export:** Do not extend `GlbBuilder`'s raw `struct.pack` writer in
+    `scripts/unity_assets.py` to hand-pack meshes, skin weights, materials, or morph targets. Use
+    `pygltflib` / `trimesh` in Python, or `AssetRipper` / `AssetStudioMod` CLI / headless Unity
+    (`2022.3.62f2`, matching the bundle headers) with `glTFast` / `UniGLTF`.
+  - **Three.js animation & additive layers:** Use `THREE.AnimationUtils.makeClipAdditive` for
+    additive AnimatorController layers (such as Layer 2 `m_breathing@l` at weight 0.5) rather than
+    writing custom bone math outside `THREE.AnimationMixer`.
+  - **Spring bones, colliders & humanoid retargeting:** Use `@pixiv/three-vrm`
+    (`@pixiv/three-vrm-springbone` for `SP_*` bone chains and capsule/sphere colliders driven by
+    the exported `MagicaCloth2` parameters; `@pixiv/three-vrm-animation` if moving to full
+    normalized humanoid retargeting) instead of writing custom physics or ad-hoc bone solvers.
+  - **Visual verification:** Do not build or expand CPU software rasterizers in Python/NumPy
+    (like `scripts/render_motion_preview.py`, which does not test the real Three.js shaders,
+    mixer, or retargeting). Verify rendering against the real `<StageCanvas />` via headless
+    Chromium / Playwright or the user's `--remote-debugging-port` Chrome session.
+  - **Binary / protocol inspection (`alst` streams, MonoBehaviours):** Do not hand-roll wire-format
+    protobuf parsers or guess schemas from hex dumps. Use `Il2CppDumper` / `AssetRipper` on the
+    game binaries/bundles to get exact C# class and protobuf schemas, and use standard `protobuf` /
+    `protoc --decode_raw`.
+
+## Where assets come from
+
+| Layer | What it is |
+| --- | --- |
+| Raw game data (`data-inspect/`) | Dumps of the game's asset server `assets.link-like-lovelive.app`: `llll-assets-ios.7z` (Unity asset bundles), `llll-assets-raw.7z` (audio/text/video), `llll-assets-with_meets.7z`. `data-inspect/README.md` describes the layout. `ios-full/ios/` is fully extracted (49,007 bundles, hashed names like `ios/tq/tq374hp…`). |
+| Bundle index (`.inspect-tmp/ios_index.jsonl`) | One JSON line per bundle: `file`, `cabs`, `deps`, `containers` (asset ids such as `mot_00_01060`), `types` (Unity object counts). Grep it to find which bundle holds an asset. |
+| Model exports (`data-inspect/model-export/`) | UnityPy exports of costume/face models (`report.json` per model), produced by the scripts in `.inspect-tmp/scripts/`. |
+| hamproductions' explorer data | Where the current GLB/audio files originally came from. We only keep their asset **index**, `data_cache/model_viewer_context.json` (asset id → `glbPath`, `textureDir`, `textures`, `textureMap`, `extraGlbs`, `metadata.characterName`), which the build and cache scripts use to map ids to files. |
+| Our store | `public/assets/` ⇄ `gs://hasu-web-reader-assets` (same layout). `npm run cache-assets -- <scriptId>` downloads from the bucket; `scripts/upload_assets_gcs.sh <dir>` uploads. |
+
+### Bucket
+
+`gs://hasu-web-reader-assets`, project `future-name-201021` (the user's Love Live project,
+which also runs ll-bot/ll-predictions; a dedicated project couldn't be created because the
+account hit Google's project quota). **Private since 2026-11-25**: no public reads (the
+`allUsers` binding was removed), so plain `storage.googleapis.com` URLs return 403 and
+`npm run cache-assets` (which downloads anonymously) needs to switch to authenticated
+`gcloud storage cp`. The deployed site (GitHub Pages, `mting314.github.io/hasu-web-reader`)
+is meant to get short-lived signed URLs from a small Cloud Run signing service; that service
+isn't built yet, so local dev reads `public/assets/`. CORS GET/HEAD from `*` is still set.
+GLB/JSON are stored gzip-encoded; `.webm` is labelled `audio/webm`.
+`Cache-Control: public, max-age=3600` while models are still being re-exported; only switch to
+long/immutable caching with versioned paths.
+
+`archive/` in the bucket holds the Fes×LIVE / With×MEETS stream archive, copied from the
+community dump on MEGA with the game server's layout kept (`archive/hls/<stream>/` byte-range
+fMP4 HLS, `archive/alst/<live>/` the live-motion recording). Only the best video and audio
+rendition per stream is kept. Docs media lives in the separate public bucket
+`gs://hasu-web-reader-docs`.
+
+The app reads assets as `/assets/<path>`. With `VITE_ASSET_BASE_URL` set (see `.env.local`),
+`src/remoteAssets.ts` rewrites those URLs to the bucket: scenario data on load, plus Three.js
+loads and `fetch()` as a backstop. `VITE_REMOTE_ASSET_PREFIXES` limits which paths go remote
+(empty = all).
+
+## Layout and naming (`public/assets/` = bucket)
+
+```
+3d/costume/<costumeId>/<costumeId>.glb              character model (body + face)
+3d/costume/<costumeId>/<costumeId>_materials.json   toon material values from the game
+3d/costume/<costumeId>/SCSch0NN<Chr>_Eye_highlightmain.png
+3d/ppadv/<propId>/<propId>.glb (+ extra GLBs, .webp textures)   story props / sets
+3d/motions/mot_00_NNNNN.glb                          body animations
+3d/animations/<char>_expressions.json                facial expression presets
+3d/metadata/motions.json                             motion id -> description
+story/backgrounds/story_bg_image_NNN.webp            2D backgrounds (000 = none)
+story/voice/vo_adv_<scriptId>_<seq4>_m<charId>_01[@<name>].webm   voice (Opus)
+sound/effects/se_adv_<name>_NNNN.webm                sound effects
+bgm/bgm_adv_<mood>_NNNN.mp3                          music (script ids like BgmAdvMorning0001)
+assets/charaicon/charamini_icon_face_sd_<charId>_01.webp
+```
+
+- **Script ids** `TTTEEEPP`: `10300101` = 103rd term, episode 001, part 01. URL/data-file slug
+  `103-ep1-part1` (`src/storySlug.ts`, `slug_for_script_id` in `scripts/build_scenarios.py`).
+- **Character ids**: 1031 Kaho, 1032 Sayaka, 1033 Rurino, 1021 Kozue, 1022 Tsuzuri, 1023 Megumi,
+  1041 Ginko, 1042 Kosuzu, 1043 Hime, 1051 Ceras, 1052 Izumi, 1011 Sachi; NPCs use 9xxx
+  (9009 = the dorm mother, 寮母).
+- **Costume ids** `3d_costume_1001<charId><variant>`: `3d_costume_1001103101` = Kaho in the
+  school uniform used in episode 1. Unity names: `SCSch011Kah` (body), `SCSch011Kah_Face_normal`.
+
+## What's inside
+
+**Costume GLBs.** Body skeleton bones are `<Chr>DeA_*` (e.g. `KahDeA_Hips`). The face is a
+separate rig (`<Chr>_Spine_03/Neck/Head`, eye bones) parented under the body head through a
+`3d_face_<id>` node. The Face/Brow/EyeShadow meshes are skinned to the single `<Chr>_Head`
+bone, so all facial deformation is blendshapes. `*_outline` meshes are hidden (the outline
+pass isn't implemented); `IndoorShoes` is hidden.
+
+**Costume prefabs and MonoBehaviours (`3d_costume_<id>`).** While `__scsch0NN<chr>dea.fbx` holds
+only the bare body FBX (`GameObject`, `Transform`, `SkinnedMeshRenderer`, `Mesh`, `Avatar`), the
+assembled costume bundle `3d_costume_<id>` (e.g. `3d_costume_1001103101` for Kaho's uniform: 248
+Transforms, 58 `MonoBehaviour`s, 13 `MonoScript`s, 19 dependency bundles) combines the body FBX,
+face FBX (`__scsch011kah_face_normal.fbx`), materials, and runtime Unity components:
+- **Secondary physics (`MagicaCloth2` assembly `MagicaClothV2`):**
+  - **Hair, necktie, and collar (`clothType: 1` = `BoneCloth`):** 6 `MagicaCloth2.MagicaCloth`
+    components on `Extension_MagicaCloth_{FrontHair,BackHair,SideHair01,SideHair02,Necktie,Collar}`
+    drive the `SP_*` spring-bone chains (`rootBones` lists the root `SP_*` transforms, e.g.
+    `KahDeA_SP_HairFront01_01`, `KahDeA_SP_Necktie_01`, `KahDeA_SP_Collar_01`), complete with
+    serialized `gravity`, `damping`, `angleRestorationConstraint.stiffness` curves, inertia, and
+    `colliderCollisionConstraint.colliderList`.
+  - **Skirt (`clothType: 0` = `MeshCloth`):** `Extension_MagicaCloth_Skirt` has `rootBones: []`
+    because the skirt is simulated as **vertex cloth** (`MeshCloth`), prebuilt in the dependency
+    bundle `__magicaprebuild_<model>.asset` (`MagicaCloth2.PreBuildScriptableObject`), colliding
+    against 9 of the 15 `MagicaCapsuleCollider` / `MagicaSphereCollider` nodes attached to
+    `Hips` (1 & 2), `LUpLeg`, `RUpLeg`, `LLeg`, `RLeg`, `LFoot`, `RFoot`, `Spine_01`, `Spine_03`,
+    `LShoulder`, `RShoulder`, `LArm`, `RArm`, `Neck`, and `Head`.
+- **Twist / bend / slide helper bones (`Inspix.SubBoneController` & `SubBoneReference`):**
+  The non-humanoid helper bones (`*BendHalf`, `*Roll`, `*RollHalf`, `*Slide`, `*ElbowSub*`,
+  `*UpLegSub*`, `*KneeSub*`) are driven procedurally at runtime from the primary limb bones using
+  the 42 constraint definitions in dependency bundle `__subbone_gate4_scs_base.asset` (e.g. `LArm`
+  drives `LArmBendHalf` at `0.5×`, `LArmRoll` at `-1.0×`, `LArmRollHalf` at `-0.5×`; `LLeg` drives
+  `LLegBendHalf` at `0.5×` and `LLegSlide` at `0.02×`).
+- **Face rig coupling & expressions (`Inspix.FaceBonesCopier`, `ExpressionSettings`, `BlinkController`, `CryEyeController`):**
+  - `FaceBonesCopier` on `3d_face_<id>` links the body's `spine03`, `neck`, `head`, `leftEye`, and
+    `rightEye` transforms to the face rig.
+  - `ExpressionSettings` points to `__<char>_expression_controller.controller` (a 2-layer
+    `AnimatorController` referencing ~56 `__<char>_face_*.anim` and `__<char>_mouth_*.anim`
+    blendshape clips) and lists `expressionData` (`label`, `key`, `ableBlink`, `enable`).
+  - `CryEyeController` toggles `_UseCryParameters` on the eye highlight/distortion materials.
+
+**Blendshapes and expressions.** Names are `<Mesh>_.<Shape>` (`Face_.Mouth_Smile`,
+`Brow_.Eyebrow_Angry`, `EyeShadow_.Eyelids_Close_L`, `Eye_.Eyelids_pupil`). Presets in
+`<char>_expressions.json` are `{name, description, shapes: {shape: 0–100}}`;
+`[キャラ表情変更 <char> <preset>]` selects one, and `-Close` variants are the eyes-closed version.
+Every `Mouth_*` shape is a complete mouth pose authored against the neutral mesh, and
+`Mouth_Normal` is effectively the neutral mesh. **Never stack mouth shapes**: two at once push
+the teeth/tongue through the face. Lip-sync crossfades the expression's mouth out while the
+vowel shape of the same family fades in (`Mouth_Smile` → `Mouth_Smile_A/I`, `Mouth_Sulk` →
+`Mouth_Sulk_A…O`, falling back to plain `Mouth_A…O`). See `ExpressionController` in
+`src/engine/UberToonMaterial.ts`.
+
+**Materials.** The game uses `MELPOT/Toon/UberToonShader`; `createUberToonMaterial` is the
+Three.js port. `<costumeId>_materials.json` (`{source, shader, materials}`) carries the per-material
+values, written by `scripts/export_toon_materials.py` from the model export. Colors are stored
+as sRGB, the shader works in linear.
+
+**Motions.** A motion GLB has the skeleton plus clips `m_00_NNNNN@i/@a/@l/@o` (in, action,
+loop, out; one motion, `mot_00_00040`, names them `@r@i` etc.), `m_breathing@l` and hand grip
+clips. In the raw data each motion is an asset bundle with container `mot_00_NNNNN`
+(11 `AnimationClip`s + an `AnimatorController`); the index has 2,534 `mot_*` containers.
+
+What the controllers say (all 144 that episode 1 uses, dumped with UnityPy):
+- Base layer `in → action → loop`: every transition is 0 s, fires when its clip ends (exit
+  time 1), no interruption, speed 1, no mirror, Foot IK off. `loop → out` only on an `out`
+  trigger. No AnyState transitions. A second layer plays `m_breathing@l` **additively at weight
+  0.5**; two more hold the hand-grip poses at weight 0; one layer has an IK pass at weight 0.
+- Every motion is a round trip from a shared neutral pose: `@o` ends exactly where `@i` starts
+  (median 0.0°), and `@i` starts from one of a few neutral poses (standing; seated for every
+  `着座` motion, hips 32.7 cm lower; running). Held `@l` poses are 22° (median) to 58° away.
+- Many `@l` clips are just the held end pose, so **playing only `@l` skips the gesture**.
+- How the game switches between motions, fires `out`, and reads the extra command arguments
+  isn't in the bundles. It's in the game's code, decoded under "The game's code → Story motions"
+  below.
+
+`src/engine/storyMotion.ts` reproduces exactly that subset instead of a general blender: one clip
+plays per character, the next starts when it ends with the leftover time carried over, and a new
+motion blends in from the pose on screen, frozen at the switch (what a Unity transition does
+when it starts mid-animation). The switch blend is 0.28 s, the original reader's guess; the game
+uses **0.5 s** and a different start state (see "Story motions" below), and storyMotion.ts
+should be brought in line with it.
+`updateStoryMotion` replaces `mixer.update` in the render loop. Two three.js traps it handles:
+the mixer only writes a property when its animated value changes (a held pose stops being written
+after one frame), so anything that edits bones after `mixer.update` must put the mixer's values
+back before the next update; and starting/stopping actions inside a mixer `finished` event
+makes the mixer skip an action that frame. Earlier attempts that juggled several weighted
+actions popped or sagged toward the rest pose whenever a switch interrupted another.
+Breathing isn't reproduced yet.
+
+Tracks target a reference character's bones (`KahDeA_*` and `Kah_*`). `retargetMotionClips`
+renames them to the costume's prefix, skips spring (`SP_*`) and hair bones when the characters
+differ, and scales the hips translation by the ratio of rest hip heights. The game solves each
+motion on the character's own Avatar, and root motion scales with body size; without the scaling,
+Kozue stood 10.5 cm too low. With it, every character's hands, feet and head land within about
+1 cm of a per-character solve (bone rotations carry over by name almost exactly).
+
+All motion GLBs in the store are exported from the raw data by `scripts/export_motions.py`
+(see "Converting motions" below). The 127 older hamproductions-derived files are kept only as a
+local backup in `.inspect-tmp/hamproductions-motions-backup/`; don't use them as a reference.
+
+**Audio.** Voice and SE are Opus `.webm`, BGM is `.mp3`. Several exported "ambience" SEs are
+sub-second fragments (e.g. `se_adv_ambience_classroom_0001` is one 0.48 s tap); looping those
+sounds like endless footsteps, so the build only loops SEs ≥ 3 s (durations cached in
+`data_cache/se_durations.json`).
+
+## Story scripts (`../hasu-dub/story_main_txt/story_main_<scriptId>.txt`)
+
+One `[command args…]` per line, with `#` comments; scene names come from `#背景` comments.
+Coordinates are Unity's: the player flips z (`x, y, -z`) and character yaw becomes `180 - ry`.
+Backgrounds are 1920×1080 at 100 px/unit (a 19.2 × 10.8 m quad); the camera FOV is 10.5°.
+Commands `scripts/build_scenarios.py` handles:
+
+- **Characters**: `キャラ表示` (name, costume, expression controller, pos, rot), `キャラ非表示`,
+  `キャラ描画有効/無効`, `キャラ移動`, `キャラ向き変更`, `キャラ視線変更`, `キャラ表情変更`,
+  `キャラモーション再生 / 即時再生` (motion id), `顔紅潮操作`
+- **Stage**: `3Dオブジェクト表示/非表示` (props), `背景表示/移動/回転`, `カメラ移動/回転`,
+  `被写界深度開始/終了`, `プリセットポストエフェクト開始/終了`, `セピア…`, `モノクロ…`,
+  fades `暗転_イン/アウト`, `ブラックアウト_…`, `円_…`
+- **Audio**: `BGM再生`, `BGMクロスフェード再生`, `BGM停止`, `SE再生 <id> <volume> <fadeInSec>`,
+  `SE停止 <id> <fadeOutSec>`
+- **Timing**: `待機 秒数指定 <sec>`
+- **Text**: `メッセージ表示 <speaker> <voiceId> <text>`, `ボイス無しメッセージ表示`, `ノベルテキスト追加`
+
+Messages don't block: the `待機` waits are the timeline, and the waits after a line add up to
+roughly its on-screen time. One voice file can span several consecutive lines; the build
+splits it into sub-clips by those cumulative waits (`voiceStartSec`/`voiceEndSec`).
+
+The compiled `public/data/scenarios/<slug>.json` has, per line, a full `stateBefore` stage
+snapshot (so any line can be jumped to), timed `intraEvents`, aligned translations, `tokensJp`
+(Japanese word segmentation, see `scripts/jp_lexer.py`), and a per-episode `lexicon`.
+
+## Working with the raw data
+
+**Python tooling is uv.** `pyproject.toml` pins `UnityPy==1.25.4` and numpy (the `data`
+group adds `wordfreq` for rebuilding `data_cache/wordfreq_ja.json`). Run scripts with
+`uv run scripts/<name>.py …`, and use `uv run python -I` for ad-hoc code that reads the dump
+(it's untrusted data). `npm run build-scenarios` / `cache-assets` already go through uv.
+
+**Opening bundles.** The iOS bundles start with a 2-byte prefix (`AB 00`) before the
+`UnityFS` signature, so UnityPy can't open the files as they are: strip the prefix and load the bytes
+(`BundleIndex.load_env` in `scripts/unity_assets.py`). Find the bundle for an asset id with the
+index (`containers`); rebuild the index with
+`uv run scripts/build_bundle_index.py .inspect-tmp/ios_index.jsonl data-inspect/ios-full/ios`.
+Clips and Avatars are self-contained; meshes and materials reference other bundles through
+`deps` (CAB names, `BundleIndex.by_cab`). `read_typetree()` gives plain dicts.
+
+**Converting motions** (`uv run scripts/export_motions.py --scripts 10300101 10300102 --check`,
+or explicit `mot_…` ids). The clips are Mecanim *humanoid* clips: curves hold muscle values,
+root motion and IK goals, not bone transforms. `scripts/unity_assets.py` does it:
+- `decode_clip`: `m_MuscleClip.m_Clip` = streamed (cubic segments), dense and constant curves,
+  in that order; bindings with typeID 95 (Animator). Attributes 7–9 RootT, 10–13 RootQ, 14–41
+  IK goals (LeftFoot, RightFoot, LeftHand, RightHand: T+Q each), 42–96 the 55 body muscles,
+  97–136 the 40 finger muscles.
+- `Avatar` + `HumanoidBaker`: Unity's humanoid math on a reference Avatar (Kaho's body rig,
+  container `__scsch011kahdea.fbx`). Per bone: `preQ · ZYRoll(tan(½·angle)) · conj(postQ)`, with
+  the muscle → angle from its limits. The hips come from RootT/RootQ, which describe the
+  centre of mass and a body frame built from the legs and arms.
+- The output uses the same Unity → glTF convention as the costume GLBs (`t: (-x, y, z)`,
+  `q: (x, -y, -z, w)`).
+
+**Validate against the raw data itself, never against third-party exports.** Each clip stores
+IK-goal curves for the hands and feet, so `--check` measures how far the baked wrists land from
+the clip's own hand goals. Across episode 1's 580 main clips the median is 0.3 cm, 90% are under
+1.9 cm, and the worst is 2.8 cm. That gap isn't a decoding error or drift: the baked hand
+*rotations* match the goals' rotations exactly (median 0.00°), and the error doesn't grow over a
+clip. It's body proportions: the goals record where the hands were on the body the motion was
+made on, and the same clips baked on the 14 character rigs give 0.26 cm (Sachi) to 2.5 cm (Kozue,
+Hime). The game shows the same gap, since nothing applies IK (Foot IK off, IK layer at weight 0).
+Foot goals sit at the sole, 8.1 cm below the ankle. To eyeball a motion without a browser,
+`uv run scripts/render_motion_preview.py mot_00_01060 … --out docs/media/x.mp4` renders a
+before/after video (CPU skinning on the costume GLB, game clip order; upload it with
+`scripts/upload_docs_media.sh` rather than committing it). `3d/metadata/motions.json`
+has the Japanese description of each motion, which is useful for checking what you see.
+
+## The game's code (`data-inspect/client-dump/`)
+
+Pulled from the transfer VM (`hasu-archive-mover`, `~/client/dump/` and the APK's
+`lib/arm64-v8a/`); git-ignored like the rest of `data-inspect/`.
+
+| File | What it is |
+| --- | --- |
+| `dump.cs` (66 MB) | Il2CppDumper output: every C# class, field (with offsets), enum, constant and method signature, with each method's `RVA`. No method bodies. |
+| `stringliteral.json` | The 27,915 C# string literals (metadata addresses, not VAs in the .so). |
+| `libil2cpp.so` (161 MB) | The compiled ARM64 game code. Method bodies live here at the RVA from `dump.cs` (VA = RVA). |
+
+How to read a method: find it in `dump.cs` (`grep -n "class CharaMotionCommand" …`), take its
+RVA, and disassemble that range with
+`/usr/bin/objdump -d --start-address=0x… --stop-address=0x… data-inspect/client-dump/libil2cpp.so`.
+Float literals are `mov w8, #0x…` / `fmov` immediates or loads from `.rodata` (read them with
+`struct.unpack('<f')`; the first PT_LOAD maps file offset = VA). Static fields are reached through
+`[class + 0xb8]` + the field offset from `dump.cs`. Namespaces: `Tecotec.*` = story (ADV) engine,
+`Inspix.*` = live/3D characters, `Alst.Protocol` = live-stream protobuf schema,
+`School.*` = another set of story commands.
+
+### Story motions (`Tecotec.CharaMotionCommand`, `Tecotec.MotionHandler`)
+
+`[キャラモーション再生 <char> <mot> <playType> [breathing]]` (`CharaMotionCommand.DoExecute`,
+RVA 0x4133244):
+- `playType` is `MotionHandler.MotionPlayType`, and picks the state the new motion **starts in**
+  (`PlayTypeToStateHash`): `0 Normal` → `in`, `1 LoopToLoop` → `loop`, `2 LoopToAction` →
+  `action`. The story scripts almost always pass `2`, so **story motions start at `@a`, not
+  `@i`**; the `@i` clip is skipped and the crossfade covers the gap from the current pose.
+- It then calls `ModelHandler.Play(controller, stateHash, transitionDuration: 0.5, 0, 0)`. The
+  **switch blend is 0.5 s**.
+- The optional 4th argument is the weight of the additive breathing layer:
+  `ModelHandler.ApplyLayerWeight(PostureLayer.Breathing (= 2), arg)`. **If it's omitted the game
+  sets it to 0.2** (float at 0x1aff17c), not the controller's 0.5. Values in the scripts are
+  0–0.09, so story breathing is subtle.
+
+`MotionHandler` runs its own `PlayableGraph`: an `AnimationMixerPlayable` with two
+`AnimatorControllerPlayable` inputs (current, next) whose weights it crossfades (`DoBlend`,
+`TransitionState` `None / PlayingOut / PlayingMix`). `Blend` (RVA 0x497D9E0):
+- No motion playing yet: plays the new controller straight away, no blend.
+- New state is `in` (playType 0) and the current controller has an `@o` clip: fires `out` on the
+  current motion (state `PlayingOut`), plays `@o` until `transitionDuration` before its end
+  (`outClip.length − 0.5`), and only then crossfades into the new motion over 0.5 s. **This is
+  the only path that ever plays `@o`.**
+- Otherwise (playType 1 or 2, i.e. nearly every story line): crossfades from the current
+  motion into the new one over 0.5 s right away. `@o` never plays.
+
+`[キャラモーション即時再生 <char> <mot> <playType> <t>]` (`School.CharaMotionImmediatelyCommand`,
+RVA 0x43ED9E8): the same `playType` → state mapping, then
+`AdvCharaMotionState.CreateNovelState(controller, stateHash, normalizedTime: t)` and
+`ModelHandler.SetMotionImmediately`. **The 4th argument (0.3–1) is the normalized time within
+that state to jump to**, with no blend. E.g. `2 1` = the end of `@a`.
+
+`ModelConstants` (static ctor RVA 0x497ADEC): `SecondsToEndLipSync = 0.2`,
+`LookRatioSpeedMultiplier = 4.0`, `MagicaBoneClothBlendWeight = 0.2`, `LookAtMaxAngle = 90°`.
+Animation-event keys use `#` between events, `$` before params and `:` between a param and
+its value (keys `PlaySe`, `StopSe`, `OnLoopEnd`, `OnOutEnd`).
+
+### Expressions, blinking, lip-sync in story mode (`Tecotec.EmotionHandler`)
+
+Story mode turns the live `Inspix.CharacterExpression` AnimatorController system off
+(`ModelHandler.DisableLiveExpressionSystem`) and drives blendshapes from `Tecotec.EmotionHandler`
+with the per-character `emotion_<char>` bundle (`Tecotec.EmotionData`). For Kaho:
+`TransitionTime = 0.2` s linear between expressions; blink every `5.0` s
+(`CloseTime 0.1`, `CloseStayTime 0.1`, `OpenFadeTime 0.1`, `Eyelids_Close_L/R` at 100);
+lip-sync on `Mouth_A…O`, plus an A/B mode (`Mouth_A`, `LipWeights [0, 40, 70]`,
+`LipInterval 0.125` s); 46 named emotions, each with `OverrideBlink` (1 = no blinking),
+`OverrideLipSync`, `UnuseTransition` and its blendshape keys. Read these values from the bundle
+instead of hand-tuning `<char>_expressions.json`.
+
+### Look-at (`Tecotec.CharaLookCommand`, `ModelHandler.OnIKPass`)
+
+Unity's own humanoid look-at: in `OnAnimatorIK` the game calls
+`Animator.SetLookAtWeight(weight, body, head, eyes, clamp)` with the model's `SightWeightSettings`
+and `SetLookAtPosition(Lerp(last, target, ratio))`. Looking at a character or a point uses all
+the weights. Looking by angle/direction sets body and head weight to 0, so **only the eyes
+move**. In three.js, reproduce this with a look-at on the head/eye bones that honours those
+weights (e.g. three-vrm's `VRMLookAt`), not a custom IK solver.
+
+### Live-stream motion packets (`alst`, `Inspix.CharacterMotion`)
+
+- The wire schema is in `dump.cs` (`Alst.Protocol.DataPack` / `DataFrame`, ~line 1637280):
+  `DataPack.Frames = 16`; `DataFrame` oneof `InstantiateObject = 128` (`ObjectId 8`,
+  `OwnerId 9`, `PrefabName 10`, `InitData 11`), `UpdateObject = 129` (`ObjectId 8`,
+  `Method 9` = the `[RpcId(n)]` of the `AlstromeriaComponent` field, `Payload 10`),
+  `DestroyObject = 130`. Write a `.proto` from it and use `protobuf`; don't extend the
+  schema-less parser in the choreo-study worktree.
+- `MotionReceiver.MotionData` (RpcId 1) is a 550-byte `MotionPacketAndTime`: a 542-byte
+  `MotionPacket` (body position long @0, body rotation long @8, 95 muscles int16 @16,
+  16 sub-bone position longs @206, 26 sub-bone rotation longs @334) + `double TimeSec` @542.
+- `MotionDataPacking`: muscles `short = value × 1000`. Positions × 1000 (mm), truncated.
+  **Rotations are not quaternions**: `Quaternion → eulerAngles` (degrees, `[0, 360)`),
+  × 2000, rounded half-to-even. They decode through `Quaternion.Euler` (Unity's ZXY order).
+- `PackingLong` packs `acc = (acc << bits[i]) | v[i]` for i = 0…n−1, so **element 0 (x) is in
+  the highest bits and the last element (z) in the lowest**. A negative entry in `bits` means
+  signed: the stored value is `v + (2^(n−1) − 1)`, and decoding subtracts `2^(n−1) − 1` (not
+  `2^(n−1)`). The bit widths themselves (`positionBits`/`rotationBits`) come from the
+  metadata blobs and aren't extracted yet. choreo-study's empirical (22, 20, 22) / 3 × 20 match
+  the field sizes. **But its `alst_decode.py` reads fields low→high as x, y, z, which this
+  layout says is z, y, x, and its position offset is 1 mm off.** Check it against a segment.
+- The remote side applies packets with `HumanPoseHandler.SetHumanPose` (`MotionController`),
+  i.e. the same muscle space our `HumanoidBaker` solves. Sub-bones are written straight to the
+  `SubBoneReference.moveSubBones` / `rotateSubBones` transforms.
+
+## Known gaps (episode 1)
+
+The build prints referenced assets that aren't in the store. Currently unavailable or wrong:
+- until branch `motion-sequencing` is merged, the reader plays only each motion's `@l` clip
+  (see Motions above), so gestures don't show, and non-Kaho characters stand at Kaho's hip
+  height. The branch also has the build record, in every character snapshot and motion event,
+  which command started the motion (`motionCmd` = `<scriptId>:<line>`), the turn it belongs to
+  (`motionStartTurn`) and whether it was `即時再生` (`motionImmediate`). The player decides
+  "did this motion start on this line?" from those facts instead of guessing; before, 125 of
+  ep1's motion starts were indistinguishable from motions already running
+- the reader starts at the first line, so a motion played during an episode's opening fade-in
+  (e.g. line 11 of 10300102) isn't shown
+- secondary motion and helper-bone constraints aren't wired up in the reader yet. As documented
+  under "Costume prefabs and MonoBehaviours" above, the `3d_costume_<id>` prefab bundle specifies
+  exact `MagicaCloth2` parameters: `BoneCloth` (`clothType: 1`) on the `SP_*` bone chains (front/
+  back/side hair, necktie, collar), `MeshCloth` (`clothType: 0`, prebuilt in
+  `__magicaprebuild_<model>.asset`) on the boneless skirt with 15 `MagicaCapsuleCollider` /
+  `MagicaSphereCollider` body colliders (preventing leg-through-skirt clipping on high knee lifts
+  like `mot_00_01280`), plus `Inspix.SubBoneController` (`__subbone_gate4_scs_base.asset`) for the
+  42 roll/bend/slide helper bones. In Three.js, export the `MagicaCloth2` bone chains and colliders
+  to JSON and drive the `SP_*` chains with `@pixiv/three-vrm-springbone` rather than writing a
+  custom spring physics solver.
+- the dorm mother's 5 voice clips (`vo_adv_10300101_0046…0050_m9009_01`), so those lines play unvoiced
+- Sachi's mini icon (`charamini_icon_face_sd_1011_01`)
+- prop `ppadv006_pamphlet`, which isn't in the asset index (left off the stage)
+
+## Environment gotchas
+
+- In zsh, don't use `path` as a loop variable; it's tied to `$PATH`.
+- Chrome can't be launched from Claude Code on this machine (sandbox). For browser checks, the
+  user starts Chrome with `--remote-debugging-port`, then `agent-browser connect <port>`.

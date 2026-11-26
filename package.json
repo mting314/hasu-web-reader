@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "cache-assets": "python3 scripts/cache_episode_assets.py",
-    "build-scenarios": "python3 scripts/build_scenarios.py"
+    "cache-assets": "uv run scripts/cache_episode_assets.py",
+    "build-scenarios": "uv run scripts/build_scenarios.py"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

@@ -12,6 +12,66 @@ export interface TranslationSource {
   note?: string;
 }
 
+export interface ManifestCharacterAsset {
+  name: string;
+  nameEn: string;
+  costumeId: string;
+  glbUrl: string;
+  materialsUrl: string;
+  expressionsUrl: string;
+  eyeHighlightUrl: string | null;
+  firstTurnIndex: number;
+}
+
+export interface ManifestBackgroundAsset {
+  bgId: string | null;
+  url: string;
+  firstTurnIndex: number;
+}
+
+export interface ManifestPropAsset {
+  id: string;
+  glbUrls: string[];
+  textureUrls: string[];
+  firstTurnIndex: number;
+}
+
+export interface ManifestMotionAsset {
+  id: string;
+  url: string;
+  firstTurnIndex: number;
+}
+
+export interface ManifestAudioAsset {
+  id: string | null;
+  url: string;
+  firstTurnIndex: number;
+}
+
+export interface AssetManifestCounts {
+  characters: number;
+  backgrounds: number;
+  props: number;
+  motions: number;
+  bgm: number;
+  se: number;
+  voices: number;
+  total: number;
+}
+
+export interface AssetManifest {
+  characters: ManifestCharacterAsset[];
+  backgrounds: ManifestBackgroundAsset[];
+  props: ManifestPropAsset[];
+  motions: ManifestMotionAsset[];
+  audio: {
+    bgm: ManifestAudioAsset[];
+    se: ManifestAudioAsset[];
+    voices: ManifestAudioAsset[];
+  };
+  counts: AssetManifestCounts;
+}
+
 export interface EpisodeSummary {
   /** human-readable id used in URLs and data file names, e.g. "103-ep1-part1" */
   slug?: string;
@@ -28,6 +88,9 @@ export interface EpisodeSummary {
   totalTurns: number;
   totalDurationSec: number;
   translationSources: TranslationSource[];
+  assetCounts?: AssetManifestCounts;
+  castCharacters?: ManifestCharacterAsset[];
+  initialBackgroundUrl?: string | null;
 }
 
 export interface CatalogData {
@@ -52,6 +115,12 @@ export interface CharacterState {
   motionId: string;
   motionUrl: string;
   motionDescription: string;
+  /** The script command that started this motion (`<scriptId>:<line>`); same value on its event */
+  motionCmd?: string;
+  /** Turn whose line the starting command belongs to (commands before the first line: 0) */
+  motionStartTurn?: number;
+  /** Started with キャラモーション即時再生 (or the default pose of a newly shown character) */
+  motionImmediate?: boolean;
   lookAt: {
     mode: string;
     value: number | [number, number, number];
@@ -232,6 +301,7 @@ export interface ScenarioData {
   totalTurns: number;
   totalDurationSec: number;
   translationSources: TranslationSource[];
+  assetManifest?: AssetManifest;
   turns: DialogueTurn[];
   /** Dictionary entries referenced by turns[].tokensJp */
   lexicon: Record<string, LexEntry>;

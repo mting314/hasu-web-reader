@@ -216,6 +216,21 @@ def load_ep1_part1_dub_script() -> list[dict[str, str]]:
     return out
 
 
+def motion_start(script_id: str, line_num: int, n_turns: int, immediate: bool) -> dict[str, Any]:
+    """Which command started a character's current motion, carried in every snapshot.
+
+    The player plays a motion's in/action clips only when the motion starts on screen. A
+    snapshot alone can't say that (the same motion can be started again, and a jump lands
+    mid-motion), so each start is identified by its script line and the turn it falls in.
+    Commands before the first message belong to turn 0.
+    """
+    return {
+        "motionCmd": f"{script_id}:{line_num}",
+        "motionStartTurn": max(n_turns - 1, 0),
+        "motionImmediate": immediate,
+    }
+
+
 def slug_for_script_id(script_id: str) -> str:
     """Human-readable story id: 10300101 (term 103, episode 001, part 01) -> "103-ep1-part1".
 
@@ -227,11 +242,23 @@ def slug_for_script_id(script_id: str) -> str:
     return f"{m.group(1)}-ep{int(m.group(2))}-part{int(m.group(3))}"
 
 
-def resolve_local_or_gcs(rel_path: str) -> str:
+# Asset paths referenced by the script but absent from public/assets (reported after the build).
+MISSING_ASSETS: dict[str, str] = {}
+
+
+def asset_available(rel_path: str) -> bool:
     local_file = PUBLIC_ASSETS_DIR / rel_path
-    if local_file.exists() and local_file.stat().st_size > 0:
-        return f"/assets/{rel_path}"
-    return f"https://storage.googleapis.com/llll-card/{rel_path}"
+    return local_file.exists() and local_file.stat().st_size > 0
+
+
+def asset_url(rel_path: str, script_id: str = "") -> str:
+    """App URL for an asset in our own store: public/assets/ locally, mirrored to the
+    gs://hasu-web-reader-assets bucket (the app swaps the base URL, see src/remoteAssets.ts).
+    Nothing points at third-party hosting; assets missing from the cache are still referenced
+    by path but reported, so the gap is visible instead of silently loading from elsewhere."""
+    if not asset_available(rel_path):
+        MISSING_ASSETS.setdefault(rel_path, script_id)
+    return f"/assets/{rel_path}"
 
 
 def compile_script(
@@ -352,7 +379,7 @@ def compile_script(
             eye_tex = None
             for t in asset_info.get("textures") or []:
                 if f"{char_prefix}_eye" in t.lower():
-                    eye_tex = resolve_local_or_gcs(f"3d/{tex_dir}{t}")
+                    eye_tex = asset_url(f"3d/{tex_dir}{t}", script_id)
                     break
 
             state["characters"][char_name] = {
@@ -361,9 +388,9 @@ def compile_script(
                 "characterId": cmeta["id"],
                 "color": cmeta["color"],
                 "costumeId": costume_id,
-                "glbUrl": resolve_local_or_gcs(glb_rel),
+                "glbUrl": asset_url(glb_rel, script_id),
                 "eyeHighlightUrl": eye_tex,
-                "expressionsUrl": resolve_local_or_gcs(f"3d/animations/{cmeta['enLower']}_expressions.json"),
+                "expressionsUrl": asset_url(f"3d/animations/{cmeta['enLower']}_expressions.json", script_id),
                 "emotionController": emotion_ctrl,
                 "visible": True,
                 "position": pos,
@@ -371,8 +398,9 @@ def compile_script(
                 "emotion": "NORMAL_TUUJO",
                 " emotionComment": "通常",
                 "motionId": "mot_00_00010",
-                "motionUrl": resolve_local_or_gcs("3d/motions/mot_00_00010.glb"),
+                "motionUrl": asset_url("3d/motions/mot_00_00010.glb", script_id),
                 "motionDescription": "通常立ち",
+                **motion_start(script_id, line_num, len(turns), immediate=True),
                 "lookAt": {"mode": "angle", "value": 0.0},
                 "blush": 0.0,
                 "tears": False,
@@ -442,9 +470,11 @@ def compile_script(
             # Check if motion GLB exists locally; if it 404'd on GCS, keep previous valid motionUrl as fallback
             local_mot = PUBLIC_ASSETS_DIR / mot_rel
             mot_desc = comment or (motions_meta_by_id.get(mot_id) or {}).get("description") or mot_id
+            start = motion_start(script_id, line_num, len(turns), immediate=cmd == "キャラモーション即時再生")
             if char_name in state["characters"]:
                 state["characters"][char_name]["motionId"] = mot_id
                 state["characters"][char_name]["motionDescription"] = mot_desc
+                state["characters"][char_name].update(start)
                 if local_mot.exists() and local_mot.stat().st_size > 0:
                     state["characters"][char_name]["motionUrl"] = f"/assets/{mot_rel}"
             attach_event({
@@ -453,7 +483,8 @@ def compile_script(
                 "motionId": mot_id,
                 "motionUrl": f"/assets/{mot_rel}" if local_mot.exists() else None,
                 "description": mot_desc,
-                "immediate": cmd == "キャラモーション即時再生",
+                "immediate": start["motionImmediate"],
+                "motionCmd": start["motionCmd"],
             })
             continue
 
@@ -474,14 +505,19 @@ def compile_script(
             rot = parse_vec(args[4], [0.0, 0.0, 0.0]) if len(args) >= 5 else [0.0, 0.0, 0.0]
             pinfo = assets_by_id.get(prop_id, {})
             glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
-            extra_urls = [resolve_local_or_gcs(f"3d/{e}") for e in (pinfo.get("extraGlbs") or [])]
+            if not asset_available(glb_rel):
+                # No model for this prop in our store: leave it off the stage rather than
+                # shipping a reference that can only 404.
+                MISSING_ASSETS.setdefault(glb_rel, script_id)
+                continue
+            extra_urls = [asset_url(f"3d/{e}", script_id) for e in (pinfo.get("extraGlbs") or [])]
             tex_dir = pinfo.get("textureDir") or f"ppadv/{prop_id}/"
             if not tex_dir.endswith("/"):
                 tex_dir += "/"
             state["props"][alias] = {
                 "id": prop_id,
                 "alias": alias,
-                "glbUrl": resolve_local_or_gcs(glb_rel),
+                "glbUrl": asset_url(glb_rel, script_id),
                 "extraGlbUrls": extra_urls,
                 "textureDir": f"/assets/3d/{tex_dir}",
                 "textureMap": pinfo.get("textureMap") or {},
@@ -505,7 +541,7 @@ def compile_script(
             bg_id = args[0]
             pos = parse_vec(args[1], [0.0, 0.0, 50.0]) if len(args) >= 2 else [0.0, 0.0, 50.0]
             scale = parse_vec(args[2], [1.0, 1.0]) if len(args) >= 3 else [1.0, 1.0]
-            bg_url = None if bg_id == "story_bg_image_000" else resolve_local_or_gcs(f"story/backgrounds/{bg_id}.webp")
+            bg_url = None if bg_id == "story_bg_image_000" else asset_url(f"story/backgrounds/{bg_id}.webp", script_id)
             state["background"]["bgId"] = bg_id
             state["background"]["url"] = bg_url
             state["background"]["position"] = pos
@@ -599,7 +635,7 @@ def compile_script(
             vol = float(args[2]) if len(args) > 2 and re.match(r"^[\d.]+$", args[2]) else 1.0
             fade_sec = float(args[3]) if len(args) > 3 and re.match(r"^[\d.]+$", args[3]) else 0.0
             bgm_info = bgm_map.get(bgm_id) or {}
-            bgm_url = resolve_local_or_gcs(f"bgm/{bgm_id}.mp3")
+            bgm_url = asset_url(f"bgm/{bgm_id}.mp3", script_id)
             state["audio"]["bgmId"] = bgm_id
             state["audio"]["bgmUrl"] = bgm_url
             state["audio"]["bgmTitle"] = bgm_info.get("official_title") or bgm_id
@@ -620,7 +656,7 @@ def compile_script(
             se_id = args[0]
             vol = float(args[1]) if len(args) > 1 and re.match(r"^[\d.]+$", args[1]) else 1.0
             fade_sec = float(args[2]) if len(args) > 2 and re.match(r"^[\d.]+$", args[2]) else 0.0
-            se_url = resolve_local_or_gcs(f"sound/effects/{se_id}.webm")
+            se_url = asset_url(f"sound/effects/{se_id}.webm", script_id)
             is_loop = is_looping_se(se_id)
             if is_loop:
                 state["audio"]["ambience"] = [a for a in state["audio"]["ambience"] if a["id"] != se_id]
@@ -672,16 +708,16 @@ def compile_script(
             cmeta = CHAR_META.get(speaker_jp)
             speaker_en = SPEAKER_EN_MAP.get(speaker_jp, speaker_jp)
             char_id = cmeta["id"] if cmeta else None
-            icon_url = (
-                resolve_local_or_gcs(f"assets/charaicon/charamini_icon_face_sd_{char_id}_01.webp")
-                if char_id and (PUBLIC_ASSETS_DIR / f"assets/charaicon/charamini_icon_face_sd_{char_id}_01.webp").exists()
-                else None
-            )
-            voice_url = (
-                resolve_local_or_gcs(f"story/voice/{voice_ref}.webm")
-                if voice_ref and voice_ref != "なし"
-                else None
-            )
+            icon_rel = f"assets/charaicon/charamini_icon_face_sd_{char_id}_01.webp"
+            icon_url = asset_url(icon_rel, script_id) if char_id and asset_available(icon_rel) else None
+            voice_url = None
+            if voice_ref and voice_ref != "なし":
+                voice_rel = f"story/voice/{voice_ref}.webm"
+                if asset_available(voice_rel):
+                    voice_url = asset_url(voice_rel, script_id)
+                else:
+                    # Clip not in our store: play the line unvoiced (reading-time pacing)
+                    MISSING_ASSETS.setdefault(voice_rel, script_id)
 
             translations: dict[str, dict[str, str]] = {}
             if idx < len(en_dub):
@@ -799,16 +835,162 @@ def compile_script(
     if lexer:
         lexicon, lex_tags = jp_lexer.collect_lexicon(lexer.d, (t["tokensJp"] for t in turns))
 
+    asset_manifest = build_asset_manifest(turns)
+
     return {
         "scriptId": script_id,
         "episode": episode_meta,
         "totalTurns": len(turns),
         "totalDurationSec": round(clock_sec, 3),
         "translationSources": translation_sources,
+        "assetManifest": asset_manifest,
         "turns": turns,
         # Dictionary entries referenced by turns[].tokensJp (JMdict, EDRDG, CC BY-SA 4.0)
         "lexicon": lexicon,
         "lexTags": lex_tags,
+    }
+
+
+def build_asset_manifest(turns: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build a deduplicated, firstTurnIndex-ordered manifest of every 3D, 2D, and audio asset in the episode."""
+    characters: dict[str, dict[str, Any]] = {}
+    backgrounds: dict[str, dict[str, Any]] = {}
+    props: dict[str, dict[str, Any]] = {}
+    motions: dict[str, dict[str, Any]] = {}
+    bgm: dict[str, dict[str, Any]] = {}
+    se: dict[str, dict[str, Any]] = {}
+    voices: dict[str, dict[str, Any]] = {}
+
+    for turn in turns:
+        idx = turn["index"]
+        for snap in (turn["stateBefore"], turn["stateAfter"]):
+            bg = snap.get("background") or {}
+            bg_url = bg.get("url")
+            if bg_url and bg_url not in backgrounds:
+                backgrounds[bg_url] = {
+                    "bgId": bg.get("bgId"),
+                    "url": bg_url,
+                    "firstTurnIndex": idx,
+                }
+
+            aud = snap.get("audio") or {}
+            bgm_url = aud.get("bgmUrl")
+            if bgm_url and bgm_url not in bgm:
+                bgm[bgm_url] = {
+                    "id": aud.get("bgmId"),
+                    "url": bgm_url,
+                    "firstTurnIndex": idx,
+                }
+            for amb in aud.get("ambience") or []:
+                amb_url = amb.get("url")
+                if amb_url and amb_url not in se:
+                    se[amb_url] = {
+                        "id": amb.get("id"),
+                        "url": amb_url,
+                        "firstTurnIndex": idx,
+                    }
+
+            for c in (snap.get("characters") or {}).values():
+                cid = c.get("costumeId")
+                glb_url = c.get("glbUrl")
+                if cid and glb_url and cid not in characters:
+                    characters[cid] = {
+                        "name": c.get("name"),
+                        "nameEn": c.get("nameEn"),
+                        "costumeId": cid,
+                        "glbUrl": glb_url,
+                        "materialsUrl": re.sub(r"\.glb$", "_materials.json", glb_url),
+                        "expressionsUrl": c.get("expressionsUrl"),
+                        "eyeHighlightUrl": c.get("eyeHighlightUrl"),
+                        "firstTurnIndex": idx,
+                    }
+                m_url = c.get("motionUrl")
+                if m_url and m_url not in motions:
+                    motions[m_url] = {
+                        "id": c.get("motionId"),
+                        "url": m_url,
+                        "firstTurnIndex": idx,
+                    }
+
+            for p in (snap.get("props") or {}).values():
+                pid = p.get("id")
+                p_glb = p.get("glbUrl")
+                if pid and p_glb and pid not in props:
+                    glb_urls = [p_glb, *(p.get("extraGlbUrls") or [])]
+                    tex_dir = p.get("textureDir") or ""
+                    tex_urls = sorted({
+                        f"{tex_dir}{tex_file}"
+                        for entry in (p.get("textureMap") or {}).values()
+                        for tex_file in (entry or {}).values()
+                        if tex_file
+                    })
+                    props[pid] = {
+                        "id": pid,
+                        "glbUrls": glb_urls,
+                        "textureUrls": tex_urls,
+                        "firstTurnIndex": idx,
+                    }
+
+        for ev in (turn.get("preEvents") or []) + (turn.get("intraEvents") or []):
+            m_url = ev.get("motionUrl")
+            if m_url and m_url not in motions:
+                motions[m_url] = {
+                    "id": ev.get("motionId"),
+                    "url": m_url,
+                    "firstTurnIndex": idx,
+                }
+            se_url = ev.get("seUrl")
+            if se_url and se_url not in se:
+                se[se_url] = {
+                    "id": ev.get("seId"),
+                    "url": se_url,
+                    "firstTurnIndex": idx,
+                }
+
+        v_url = turn.get("voiceUrl")
+        if v_url and v_url not in voices:
+            voices[v_url] = {
+                "id": turn.get("voiceId"),
+                "url": v_url,
+                "firstTurnIndex": idx,
+            }
+
+    char_list = list(characters.values())
+    bg_list = list(backgrounds.values())
+    prop_list = list(props.values())
+    motion_list = list(motions.values())
+    bgm_list = list(bgm.values())
+    se_list = list(se.values())
+    voice_list = list(voices.values())
+
+    return {
+        "characters": char_list,
+        "backgrounds": bg_list,
+        "props": prop_list,
+        "motions": motion_list,
+        "audio": {
+            "bgm": bgm_list,
+            "se": se_list,
+            "voices": voice_list,
+        },
+        "counts": {
+            "characters": len(char_list),
+            "backgrounds": len(bg_list),
+            "props": len(prop_list),
+            "motions": len(motion_list),
+            "bgm": len(bgm_list),
+            "se": len(se_list),
+            "voices": len(voice_list),
+            "total": (
+                len(char_list)
+                + len(bg_list)
+                + len(prop_list)
+                + len(motion_list)
+                + len(bgm_list)
+                + len(se_list)
+                + len(voice_list)
+            ),
+        },
     }
 
 
@@ -873,6 +1055,7 @@ def main() -> None:
         print(
             f"  -> Wrote {out_path.relative_to(ROOT_DIR)} "
             f"({compiled['totalTurns']} turns, {len(compiled['translationSources'])} translation sources, "
+            f"{compiled['assetManifest']['counts']['total']} unique assets, "
             f"{len(compiled['lexicon'])} dictionary entries)"
         )
         catalog_entries.append({
@@ -880,11 +1063,26 @@ def main() -> None:
             "totalTurns": compiled["totalTurns"],
             "totalDurationSec": compiled["totalDurationSec"],
             "translationSources": compiled["translationSources"],
+            "assetCounts": compiled["assetManifest"]["counts"],
+            "castCharacters": compiled["assetManifest"]["characters"],
+            "initialBackgroundUrl": (
+                compiled["assetManifest"]["backgrounds"][0]["url"]
+                if compiled["assetManifest"]["backgrounds"]
+                else None
+            ),
         })
 
     catalog_path = PUBLIC_DATA_DIR / "catalog.json"
     catalog_path.write_text(json.dumps({"episodes": catalog_entries}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote catalog to {catalog_path.relative_to(ROOT_DIR)}")
+
+    if MISSING_ASSETS:
+        print(
+            f"\n[WARN] {len(MISSING_ASSETS)} referenced asset(s) are not in public/assets "
+            "(missing voice clips play unvoiced, missing props are left off the stage):"
+        )
+        for rel, sid in sorted(MISSING_ASSETS.items()):
+            print(f"  {sid}  {rel}")
 
 
 if __name__ == "__main__":

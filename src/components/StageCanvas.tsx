@@ -6,14 +6,21 @@ import {
   createUberToonMaterial,
   ExpressionController,
   ExpressionPreset,
+  restHipsHeight,
   retargetMotionClips,
   ToonMaterialParams,
 } from "../engine/UberToonMaterial";
 import { AudioMixer } from "../engine/AudioMixer";
+import { MotionHost, pickStoryMotionClips, playStoryMotion, updateStoryMotion } from "../engine/storyMotion";
 import {
+  AssetManifest,
   CharacterState,
   DialogueTurn,
+  ManifestCharacterAsset,
+  ManifestPropAsset,
+  PrefetchMode,
   PropState,
+  ScenarioData,
   StageResolution,
   StageSnapshot,
 } from "../types/scenario";
@@ -27,17 +34,19 @@ interface StageCanvasProps {
   onAdvance: () => void;
 }
 
-interface LoadedCharacter {
+interface LoadedCharacter extends MotionHost {
   name: string;
   costumeId: string;
   rootGroup: THREE.Group;
   modelScene: THREE.Object3D;
-  mixer: THREE.AnimationMixer;
   expressionCtrl: ExpressionController;
   expressions: Map<string, ExpressionPreset>;
-  currentMotionId: string | null;
+  /** Start key (`motionCmd`) of the motion last requested, and of the one actually playing */
+  requestedMotion: string | null;
+  appliedMotion: string | null;
   currentEmotion: string | null;
-  activeAction: THREE.AnimationAction | null;
+  /** Motion clips retargeted to this character, per motion id (reused so actions are too). */
+  motionClips: Map<string, Promise<THREE.AnimationClip[]>>;
 }
 
 interface LoadedProp {
@@ -48,8 +57,14 @@ interface LoadedProp {
 
 const gltfCache = new Map<string, Promise<any>>();
 const textureCache = new Map<string, THREE.Texture>();
+const texturePromiseCache = new Map<string, Promise<THREE.Texture>>();
 const expressionJsonCache = new Map<string, Promise<ExpressionPreset[]>>();
 const toonParamsCache = new Map<string, Promise<Record<string, ToonMaterialParams>>>();
+const audioWarmCache = new Map<string, Promise<void>>();
+const warmedAssetKeys = new Set<string>();
+
+const sharedGltfLoader = new GLTFLoader();
+const sharedTexLoader = new THREE.TextureLoader();
 
 /** Game material values for a costume GLB (`<name>_materials.json` beside it); empty if absent. */
 function loadToonParamsCached(glbUrl: string): Promise<Record<string, ToonMaterialParams>> {
@@ -71,7 +86,13 @@ function loadGltfCached(loader: GLTFLoader, url: string): Promise<any> {
     p = new Promise((resolve, reject) => {
       loader.load(url, resolve, undefined, reject);
     });
+    // Avoid caching permanent rejections if a transient network glitch occurs
+    p.catch(() => {
+      gltfCache.delete(url);
+    });
     gltfCache.set(url, p);
+    // Forget failed loads so a later request can retry (callers still see the rejection).
+    p.catch(() => gltfCache.delete(url));
   }
   return p;
 }
@@ -84,14 +105,30 @@ function loadTextureCached(
   const key = `${url}::${flipY}`;
   let tex = textureCache.get(key);
   if (!tex) {
-    tex = loader.load(url);
+    let resolvePromise!: (t: THREE.Texture) => void;
+    const p = new Promise<THREE.Texture>((resolve) => {
+      resolvePromise = resolve;
+    });
+    tex = loader.load(
+      url,
+      (loaded) => resolvePromise(loaded),
+      undefined,
+      () => resolvePromise(tex!)
+    );
     tex.flipY = flipY;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     textureCache.set(key, tex);
+    texturePromiseCache.set(key, p);
   }
   return tex;
+}
+
+function prewarmTextureAsync(url: string, flipY = false): Promise<THREE.Texture> {
+  const key = `${url}::${flipY}`;
+  loadTextureCached(sharedTexLoader, url, flipY);
+  return texturePromiseCache.get(key) ?? Promise.resolve(textureCache.get(key)!);
 }
 
 function loadExpressionsCached(url: string): Promise<ExpressionPreset[]> {
@@ -104,6 +141,293 @@ function loadExpressionsCached(url: string): Promise<ExpressionPreset[]> {
     expressionJsonCache.set(url, p);
   }
   return p;
+}
+
+function prewarmAudioAsync(url: string): Promise<void> {
+  let p = audioWarmCache.get(url);
+  if (!p) {
+    p = fetch(url, { cache: "force-cache" })
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then(() => {})
+      .catch(() => {
+        audioWarmCache.delete(url);
+      });
+    audioWarmCache.set(url, p);
+  }
+  return p;
+}
+
+export async function prewarmCharacterAsset(c: ManifestCharacterAsset): Promise<void> {
+  await Promise.all([
+    loadGltfCached(sharedGltfLoader, c.glbUrl).catch(() => null),
+    c.expressionsUrl ? loadExpressionsCached(c.expressionsUrl) : Promise.resolve(),
+    loadToonParamsCached(c.glbUrl),
+    c.eyeHighlightUrl ? prewarmTextureAsync(c.eyeHighlightUrl, false) : Promise.resolve(),
+  ]);
+}
+
+export async function prewarmPropAsset(p: ManifestPropAsset): Promise<void> {
+  await Promise.all([
+    ...p.glbUrls.map((u) => loadGltfCached(sharedGltfLoader, u).catch(() => null)),
+    ...p.textureUrls.map((u) => prewarmTextureAsync(u, false)),
+  ]);
+}
+
+export function prewarmEpisodeCast(
+  characters?: ManifestCharacterAsset[],
+  initialBackgroundUrl?: string | null
+): void {
+  if (initialBackgroundUrl) {
+    void prewarmTextureAsync(initialBackgroundUrl, true);
+  }
+  for (const c of characters ?? []) {
+    void prewarmCharacterAsset(c);
+  }
+}
+
+export interface PreloadProgress {
+  loaded: number;
+  total: number;
+  tier: "idle" | "backbone" | "lookahead" | "episode" | "done";
+}
+
+interface PreloadTask {
+  key: string;
+  tier: "backbone" | "lookahead" | "episode";
+  yieldMs?: number;
+  run: () => Promise<void>;
+}
+
+/**
+ * Order manifest entries relative to `anchorTurnIndex` without scanning `turns[]`:
+ * upcoming items (`firstTurnIndex >= anchorTurnIndex`) in ascending order first,
+ * followed by earlier items (`firstTurnIndex < anchorTurnIndex`) for backward scrubbing.
+ */
+function orderFromTurn<T extends { firstTurnIndex: number }>(
+  items: T[],
+  anchorTurnIndex: number
+): T[] {
+  const ahead: T[] = [];
+  const behind: T[] = [];
+  for (const item of items) {
+    if (item.firstTurnIndex >= anchorTurnIndex) {
+      ahead.push(item);
+    } else {
+      behind.push(item);
+    }
+  }
+  ahead.sort((a, b) => a.firstTurnIndex - b.firstTurnIndex);
+  behind.sort((a, b) => b.firstTurnIndex - a.firstTurnIndex);
+  return [...ahead, ...behind];
+}
+
+/**
+ * Build & run a tiered priority preloader from compile-time `scenario.assetManifest`.
+ * Returns a cancellation function that aborts queued tasks when the user jumps lines or switches episodes.
+ */
+export function startTieredEpisodePreloader(
+  scenario: ScenarioData,
+  anchorTurnIndex: number,
+  mode: PrefetchMode,
+  enable3D: boolean,
+  onProgress?: (progress: PreloadProgress) => void
+): () => void {
+  const manifest: AssetManifest | undefined = scenario.assetManifest;
+  if (!manifest || mode === "off") {
+    onProgress?.({ loaded: 0, total: 0, tier: "idle" });
+    return () => {};
+  }
+
+  let cancelled = false;
+  const tasks: PreloadTask[] = [];
+  const seenKeys = new Set<string>();
+
+  const enqueue = (
+    key: string,
+    tier: "backbone" | "lookahead" | "episode",
+    run: () => Promise<void>,
+    yieldMs = 0
+  ) => {
+    if (!key || seenKeys.has(key)) return;
+    seenKeys.add(key);
+    tasks.push({ key, tier, yieldMs, run });
+  };
+
+  // --- Tier 1: Episode Cast & Scene Backbone (from compile-time assetManifest) ---
+  if (enable3D) {
+    for (const c of orderFromTurn(manifest.characters, anchorTurnIndex)) {
+      enqueue(`char:${c.costumeId}`, "backbone", () => prewarmCharacterAsset(c));
+    }
+  }
+  const bgOrdered = orderFromTurn(manifest.backgrounds, anchorTurnIndex);
+  const bgLimit = mode === "next1" ? 2 : bgOrdered.length;
+  for (const bg of bgOrdered.slice(0, bgLimit)) {
+    enqueue(`bg:${bg.url}`, "backbone", async () => {
+      await prewarmTextureAsync(bg.url, true);
+    });
+  }
+  if (enable3D) {
+    const propsOrdered = orderFromTurn(manifest.props, anchorTurnIndex);
+    const propLimit = mode === "next1" ? 1 : propsOrdered.length;
+    for (const p of propsOrdered.slice(0, propLimit)) {
+      enqueue(`prop:${p.id}`, "backbone", () => prewarmPropAsset(p));
+    }
+  }
+
+  // --- Tier 2: Immediate Sliding Lookahead Window (N .. N + lookaheadCount) ---
+  const lookaheadTurns = mode === "next1" ? 1 : mode === "next5" ? 8 : 12;
+  const maxLookaheadIdx = anchorTurnIndex + lookaheadTurns;
+
+  for (const v of manifest.audio.voices) {
+    if (v.firstTurnIndex >= anchorTurnIndex && v.firstTurnIndex <= maxLookaheadIdx) {
+      enqueue(`voice:${v.url}`, "lookahead", () => prewarmAudioAsync(v.url));
+    }
+  }
+  if (enable3D) {
+    for (const m of manifest.motions) {
+      if (m.firstTurnIndex >= anchorTurnIndex && m.firstTurnIndex <= maxLookaheadIdx) {
+        enqueue(`mot:${m.url}`, "lookahead", async () => {
+          await loadGltfCached(sharedGltfLoader, m.url).catch(() => null);
+        });
+      }
+    }
+  }
+  for (const b of manifest.audio.bgm) {
+    if (b.firstTurnIndex >= anchorTurnIndex && b.firstTurnIndex <= maxLookaheadIdx) {
+      enqueue(`bgm:${b.url}`, "lookahead", () => prewarmAudioAsync(b.url));
+    }
+  }
+  for (const s of manifest.audio.se) {
+    if (s.firstTurnIndex >= anchorTurnIndex && s.firstTurnIndex <= maxLookaheadIdx) {
+      enqueue(`se:${s.url}`, "lookahead", () => prewarmAudioAsync(s.url));
+    }
+  }
+
+  // Also ensure any reused motion/voice referenced directly by turns[anchorTurnIndex + 1 .. maxLookaheadIdx]
+  // (whose firstTurnIndex was earlier in the episode) is in Tier 2 lookahead:
+  const sliceEnd = Math.min(scenario.turns.length, maxLookaheadIdx + 1);
+  for (let i = anchorTurnIndex; i < sliceEnd; i++) {
+    const t = scenario.turns[i];
+    if (!t) continue;
+    if (t.voiceUrl) {
+      enqueue(`voice:${t.voiceUrl}`, "lookahead", () => prewarmAudioAsync(t.voiceUrl!));
+    }
+    if (enable3D) {
+      for (const c of Object.values(t.stateBefore.characters)) {
+        if (c.motionUrl) {
+          enqueue(`mot:${c.motionUrl}`, "lookahead", async () => {
+            await loadGltfCached(sharedGltfLoader, c.motionUrl).catch(() => null);
+          });
+        }
+      }
+      for (const ev of [...t.preEvents, ...t.intraEvents]) {
+        if (ev.motionUrl) {
+          const mUrl = String(ev.motionUrl);
+          enqueue(`mot:${mUrl}`, "lookahead", async () => {
+            await loadGltfCached(sharedGltfLoader, mUrl).catch(() => null);
+          });
+        }
+        if (ev.seUrl) {
+          const sUrl = String(ev.seUrl);
+          enqueue(`se:${sUrl}`, "lookahead", () => prewarmAudioAsync(sUrl));
+        }
+      }
+    }
+  }
+
+  // --- Tier 3: Idle Full-Episode Drain (enabled for both "next5" and "all") ---
+  if (mode === "next5" || mode === "all") {
+    const yieldMs = mode === "all" ? 5 : 35;
+    for (const b of orderFromTurn(manifest.audio.bgm, anchorTurnIndex)) {
+      enqueue(`bgm:${b.url}`, "episode", () => prewarmAudioAsync(b.url), yieldMs);
+    }
+    for (const s of orderFromTurn(manifest.audio.se, anchorTurnIndex)) {
+      enqueue(`se:${s.url}`, "episode", () => prewarmAudioAsync(s.url), yieldMs);
+    }
+    for (const v of orderFromTurn(manifest.audio.voices, anchorTurnIndex)) {
+      enqueue(`voice:${v.url}`, "episode", () => prewarmAudioAsync(v.url), yieldMs);
+    }
+    if (enable3D) {
+      for (const m of orderFromTurn(manifest.motions, anchorTurnIndex)) {
+        enqueue(
+          `mot:${m.url}`,
+          "episode",
+          async () => {
+            await loadGltfCached(sharedGltfLoader, m.url).catch(() => null);
+          },
+          yieldMs
+        );
+      }
+    }
+  }
+
+  const total = tasks.length;
+  let loaded = 0;
+
+  // Fast-forward tasks that have already completed in previous runs
+  const pendingTasks: PreloadTask[] = [];
+  for (const t of tasks) {
+    if (warmedAssetKeys.has(t.key)) {
+      loaded++;
+    } else {
+      pendingTasks.push(t);
+    }
+  }
+
+  const report = (tier: PreloadProgress["tier"]) => {
+    if (!cancelled) {
+      onProgress?.({ loaded, total, tier: loaded >= total ? "done" : tier });
+    }
+  };
+
+  if (pendingTasks.length === 0) {
+    report("done");
+    return () => {
+      cancelled = true;
+    };
+  }
+
+  report(pendingTasks[0].tier);
+
+  let cursor = 0;
+  const maxConcurrency = mode === "all" ? 6 : mode === "next5" ? 3 : 2;
+
+  const worker = async () => {
+    while (!cancelled) {
+      const idx = cursor++;
+      if (idx >= pendingTasks.length) break;
+      const task = pendingTasks[idx];
+      report(task.tier);
+      try {
+        await task.run();
+        warmedAssetKeys.add(task.key);
+      } catch {
+        // ignore individual asset prewarm errors
+      }
+      loaded++;
+      report(task.tier);
+      if (!cancelled && task.yieldMs && task.yieldMs > 0) {
+        await new Promise((r) => window.setTimeout(r, task.yieldMs));
+      }
+    }
+  };
+
+  // Delay background workers slightly (120ms) so Tier 0 active turn claims first connections
+  const startTimer = window.setTimeout(() => {
+    if (cancelled) return;
+    const workers = Array.from(
+      { length: Math.min(maxConcurrency, pendingTasks.length) },
+      () => worker()
+    );
+    void Promise.all(workers).then(() => {
+      report("done");
+    });
+  }, 120);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(startTimer);
+  };
 }
 
 export const StageCanvas: React.FC<StageCanvasProps> = ({
@@ -127,6 +451,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const currentBgUrlRef = useRef<string | null>(null);
 
   const charactersRef = useRef<Map<string, LoadedCharacter>>(new Map());
+  // Index of the turn shown before this one, to tell reading in order from a jump.
+  const prevTurnIndexRef = useRef<number | null>(null);
   const propsRef = useRef<Map<string, LoadedProp>>(new Map());
   const gltfLoaderRef = useRef(new GLTFLoader());
   const texLoaderRef = useRef(new THREE.TextureLoader());
@@ -252,7 +578,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       const lip = audioMixer.getLipSync();
       const speaker = activeSpeakerJpRef.current;
       for (const char of charactersRef.current.values()) {
-        char.mixer.update(dt);
+        updateStoryMotion(char, dt);
         char.expressionCtrl.setLipSync(char.name === speaker ? lip.level : 0, lip.vowel);
         char.expressionCtrl.update(dt);
       }
@@ -313,25 +639,36 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
   }, [cameraMode]);
 
-  // Helper to apply a motion GLB to a loaded character
-  const applyCharacterMotion = async (char: LoadedCharacter, motionId: string, motionUrl: string | null) => {
-    if (!motionUrl || char.currentMotionId === motionId) return;
-    char.currentMotionId = motionId;
+  // Apply a motion to a loaded character. `startKey` names the script command that started it
+  // (`motionCmd`), so the same motion started again is told apart from one still running. With
+  // `playIntro` the in/action clips play before the loop (the motion starts on screen); without
+  // it, the motion resumes in its loop.
+  const applyCharacterMotion = async (
+    char: LoadedCharacter,
+    motionId: string,
+    motionUrl: string | null,
+    startKey: string,
+    playIntro: boolean
+  ) => {
+    if (!motionUrl || char.requestedMotion === startKey) return;
+    char.requestedMotion = startKey;
     try {
-      const gltf = await loadGltfCached(gltfLoaderRef.current, motionUrl);
-      const clips = retargetMotionClips(gltf.scene, gltf.animations || [], char.modelScene);
-      const targetClip = clips.find((c) => c.name.endsWith("@l")) || clips[0];
-      if (targetClip) {
-        const nextAction = char.mixer.clipAction(targetClip);
-        nextAction.reset();
-        nextAction.setLoop(THREE.LoopRepeat, Infinity);
-        nextAction.play();
-        if (char.activeAction && char.activeAction !== nextAction) {
-          char.activeAction.crossFadeTo(nextAction, 0.28, false);
-        }
-        char.activeAction = nextAction;
+      let clipsPromise = char.motionClips.get(motionId);
+      if (!clipsPromise) {
+        clipsPromise = loadGltfCached(gltfLoaderRef.current, motionUrl).then((gltf) => {
+          const { intro, loop } = pickStoryMotionClips(gltf.animations || [], motionId);
+          return retargetMotionClips(gltf.scene, loop ? [...intro, loop] : intro, char.modelScene);
+        });
+        char.motionClips.set(motionId, clipsPromise);
       }
+      const clips = await clipsPromise;
+      if (char.requestedMotion !== startKey) return; // a newer motion was requested meanwhile
+      playStoryMotion(char, clips, motionId, playIntro);
+      char.appliedMotion = startKey;
     } catch (e) {
+      // Fall back to what's actually playing, so a later request retries this motion.
+      char.motionClips.delete(motionId);
+      if (char.requestedMotion === startKey) char.requestedMotion = char.appliedMotion;
       console.warn(`[StageCanvas] Motion load failed for ${motionId}:`, e);
     }
   };
@@ -407,7 +744,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   };
 
   // Ensure a character costume is loaded and updated
-  const syncCharacter = async (cState: CharacterState) => {
+  const syncCharacter = async (cState: CharacterState, turnIndex: number, arrivedInOrder: boolean) => {
     if (!sceneRef.current) return;
     let loaded = charactersRef.current.get(cState.name);
 
@@ -428,6 +765,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         const modelScene = gltf.scene as THREE.Object3D;
         if (!modelScene.userData.__toonProcessed) {
           modelScene.userData.__toonProcessed = true;
+          // Record the hips' rest height before any motion moves them (retargeting scales by it).
+          restHipsHeight(modelScene);
           const eyeHiTex = cState.eyeHighlightUrl
             ? loadTextureCached(texLoaderRef.current, cState.eyeHighlightUrl, false)
             : null;
@@ -528,9 +867,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           mixer: new THREE.AnimationMixer(modelScene),
           expressionCtrl: new ExpressionController(modelScene),
           expressions: exprMap,
-          currentMotionId: null,
+          requestedMotion: null,
+          appliedMotion: null,
           currentEmotion: null,
-          activeAction: null,
+          motionClips: new Map(),
         };
         charactersRef.current.set(cState.name, loaded);
       } catch (err) {
@@ -556,7 +896,19 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     );
 
     applyCharacterEmotion(loaded, cState.emotion);
-    await applyCharacterMotion(loaded, cState.motionId, cState.motionUrl);
+    // The motion starts on screen if its command belongs to this line, or to the previous line
+    // when reading in order (a mid-line command the reader clicked past before it ran; the game
+    // runs the rest of a line's commands at the click). Otherwise it was already running.
+    const start = cState.motionStartTurn;
+    const startsHere =
+      start !== undefined && (start === turnIndex || (arrivedInOrder && start === turnIndex - 1));
+    await applyCharacterMotion(
+      loaded,
+      cState.motionId,
+      cState.motionUrl,
+      cState.motionCmd ?? cState.motionId,
+      startsHere && !cState.motionImmediate
+    );
   };
 
   // Ensure 3D story props (bus window, desk, chair, etc.) are loaded and positioned
@@ -683,8 +1035,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     setCameraTarget(snap.camera.position, snap.camera.rotation, initialCamDur);
 
     // 3. Characters & Props
+    const arrivedInOrder = prevTurnIndexRef.current === turn.index - 1;
+    prevTurnIndexRef.current = turn.index;
     for (const cState of Object.values(snap.characters)) {
-      void syncCharacter(cState);
+      void syncCharacter(cState, turn.index, arrivedInOrder);
     }
     // Hide characters not present in snapshot
     for (const [name, loaded] of charactersRef.current.entries()) {
@@ -707,7 +1061,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         if (ev.type === "char_motion") {
           const c = charactersRef.current.get(ev.character);
           if (c && ev.motionUrl) {
-            void applyCharacterMotion(c, ev.motionId, ev.motionUrl);
+            void applyCharacterMotion(c, ev.motionId, ev.motionUrl, ev.motionCmd ?? ev.motionId, !ev.immediate);
           }
         } else if (ev.type === "char_emotion") {
           const c = charactersRef.current.get(ev.character);
