@@ -250,9 +250,18 @@ Commands `scripts/build_scenarios.py` handles:
 - **Timing**: `待機 秒数指定 <sec>`
 - **Text**: `メッセージ表示 <speaker> <voiceId> <text>`, `ボイス無しメッセージ表示`, `ノベルテキスト追加`
 
-Messages don't block: the `待機` waits are the timeline, and the waits after a line add up to
-roughly its on-screen time. One voice file can span several consecutive lines; the build
-splits it into sub-clips by those cumulative waits (`voiceStartSec`/`voiceEndSec`).
+The game's story is one timeline. Voiced messages don't block (`MessageCommand.IsWaitPlayEnd`,
+RVA 0x413A9C0, returns false); only `待機` (`WaitCommand`) and fades with `完了待ち`
+(`TransitionCommand.IsWaitPlayEnd`) advance it, and the waits after a line add up to roughly its
+on-screen time. Tapping "next" (`StoryUIWindow.OnClickMessageArea`, RVA 0x41724A8) scans forward
+from `StoryCore.ProgramCount` to the next `メッセージ表示` / `ボイス無しメッセージ表示` and
+`SkipLine`s to its line and `startTimeSec`. So **a line starts at its message**, and the commands
+after a line's last wait (camera cut, expression, motion for the next speaker) run *with the next
+message*. The build holds them (`tail` in `compile_script`) and assigns them to the next line's
+opening. Instant ones fold into its `stateBefore`; timed ones (pans, moves, fades) are scheduled
+at offset 0 from their start value. They used to fire at the end of the previous line while its
+text was still up. One voice file can span several consecutive lines; the build splits it into
+sub-clips by those cumulative waits (`voiceStartSec`/`voiceEndSec`).
 
 The compiled `public/data/scenarios/<slug>.json` has, per line, a full `stateBefore` stage
 snapshot (so any line can be jumped to), timed `intraEvents`, aligned translations, `tokensJp`

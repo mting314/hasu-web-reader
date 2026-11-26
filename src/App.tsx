@@ -475,7 +475,17 @@ export default function App() {
 
     const snap = currentTurn.stateBefore;
     AudioMixer.syncBgm(snap.audio.bgmUrl, snap.audio.bgmVolume);
-    AudioMixer.syncAmbience(snap.audio.ambience ?? []);
+    // Reading in order, beds the line's opening starts or stops are left to those SE commands
+    // (scheduled at offset 0), which carry the script's fade times.
+    const openingBeds =
+      kind === "advance"
+        ? new Set(
+            currentTurn.intraEvents
+              .filter((e) => e.turnOffsetSec === 0 && (e.type === "se_stop" || (e.type === "se_play" && e.loop)))
+              .map((e) => String(e.seId))
+          )
+        : undefined;
+    AudioMixer.syncAmbience(snap.audio.ambience ?? [], undefined, openingBeds);
   }, [currentTurn, scenario, sharesVoiceWithNext]);
 
   // Start the line's voice (or unvoiced reading timer) once the stage gate settles (stageReady).

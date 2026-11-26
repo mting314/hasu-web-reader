@@ -1201,9 +1201,11 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       if (arrivedInOrder) loaded.flush.play(loaded.currentBlush, cState.blushFadeSec ?? 0);
       else loaded.flush.set(loaded.currentBlush);
     }
-    // The motion starts on screen if its command belongs to this line, or to the previous line
-    // when reading in order (a mid-line command the reader clicked past before it ran; the game
-    // runs the rest of a line's commands at the click). Otherwise it was already running.
+    // The motion starts on screen if its command belongs to this line (including the commands
+    // after the previous line's last wait, which the build assigns to this line), or to the
+    // previous line when reading in order (a mid-line command the reader clicked past before it
+    // ran; the game runs the rest of a line's commands at the click). Otherwise it was already
+    // running.
     const startTurn = cState.motionStartTurn;
     const startsHere =
       startTurn !== undefined && (startTurn === turnIndex || (arrivedInOrder && startTurn === turnIndex - 1));
