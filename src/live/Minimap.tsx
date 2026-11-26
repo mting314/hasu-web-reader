@@ -4,7 +4,7 @@ import { MEMBER_COLORS, type LiveStage } from "./LiveStage";
 
 /**
  * Formation minimap: the stage from above with the audience at the bottom, one dot per member on
- * stage (initial, facing wedge) and the path each will take over the next couple of seconds, so
+ * stage (her symbol icon, or colour + initial until it loads; facing wedge) and the path each will take over the next couple of seconds, so
  * a dance group can see where everyone stands and where they're heading. Click a dot to follow her.
  *
  * Drawn on its own canvas from its own requestAnimationFrame loop, reading the stage's state from
@@ -13,6 +13,7 @@ import { MEMBER_COLORS, type LiveStage } from "./LiveStage";
  * Orientation: map right = three.js +x = screen right in the front camera (the top camera's view,
  * audience at the bottom). With Mirror on, the map flips left/right like the 3D view, so a dancer
  * facing the screen sees everyone on the same side as in the mirrored video, i.e. on her own side.
+ * Only positions and facings flip; the icons are drawn unmirrored so their symbols stay readable.
  */
 
 type StageMember = LiveStage["members"] extends Map<number, infer M> ? M : never;
@@ -42,6 +43,8 @@ interface MapMember {
   /** Text colour on the dot. */
   ink: string;
   label: string;
+  /** Her symbol icon (round, member colour + white symbol) once decoded; null while loading or if missing. */
+  icon: HTMLImageElement | null;
   /** Future positions (x, z) by grid index g (time g * STEP), slot g & (RING - 1). */
   ahead: Float32Array;
   keys: Int32Array;
@@ -80,20 +83,26 @@ function inkFor(hex: string): string {
   return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 0.6 ? "#0b0e14" : "#ffffff";
 }
 
-function buildMembers(stage: LiveStage): MapMember[] {
+function buildMembers(stage: LiveStage, iconBase: string): MapMember[] {
   const ms = [...stage.members.values()];
   const labels = initials(ms.map((m) => m.name));
   return ms.map((m, i) => {
     const color = MEMBER_COLORS[m.cid] ?? "#ffffff";
-    return {
-      cid: m.cid, m, color, ink: inkFor(color), label: labels[i],
+    const mm: MapMember = {
+      cid: m.cid, m, color, ink: inkFor(color), label: labels[i], icon: null,
       ahead: new Float32Array(RING * 2), keys: new Int32Array(RING).fill(-1), sx: NaN, sy: NaN,
     };
+    const img = new Image();
+    img.src = `${iconBase}/icon_charasymbol_${m.cid}.png`;
+    img.decode().then(() => (mm.icon = img), () => undefined); // no icon: keep the lettered dot
+    return mm;
   });
 }
 
-export default function Minimap({ stageRef, mirror, onPick }: {
+export default function Minimap({ stageRef, iconBase, mirror, onPick }: {
   stageRef: RefObject<LiveStage | null>;
+  /** Folder of icon_charasymbol_<characterId>.png. */
+  iconBase: string;
   mirror: boolean;
   onPick: (cid: number) => void;
 }) {
@@ -141,7 +150,7 @@ export default function Minimap({ stageRef, mirror, onPick }: {
       if (!s) return;
       if (s !== stage) {
         stage = s;
-        members = buildMembers(s);
+        members = buildMembers(s, iconBase);
         membersRef.current = members;
         held = null;
       }
@@ -206,6 +215,7 @@ export default function Minimap({ stageRef, mirror, onPick }: {
         canvas.height = Math.round(H * dpr);
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingQuality = "high"; // icons are 80 px, drawn at ~20
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "rgba(11, 14, 20, 0.8)";
       ctx.beginPath();
@@ -295,7 +305,8 @@ export default function Minimap({ stageRef, mirror, onPick }: {
       ctx.restore();
 
       // members: facing wedge, dot, initial; the followed one last, ringed
-      const r = Math.min(10, Math.max(6.5, 0.28 * scale));
+      // 18-22 px across, big enough to read the symbols even when the formation is tight
+      const r = Math.min(11, Math.max(9, 0.3 * scale));
       radiusRef.current = r;
       const fontPx = Math.round(r * 1.1);
       if (fontPx !== dotFontPx) {
@@ -348,7 +359,7 @@ export default function Minimap({ stageRef, mirror, onPick }: {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [stageRef]);
+  }, [stageRef, iconBase]);
 
   /** The on-stage member whose dot is under (x, y) (canvas px), nearest first. */
   const hit = (e: PointerEvent<HTMLCanvasElement>): number | null => {
@@ -406,9 +417,10 @@ function drawDot(ctx: CanvasRenderingContext2D, mm: MapMember, r: number, dir: n
   ctx.lineTo(x + Math.cos(a - w) * back, y + Math.sin(a - w) * back);
   ctx.closePath();
   ctx.fill();
+  if (mm.icon) ctx.drawImage(mm.icon, x - r, y - r, 2 * r, 2 * r); // never flipped, even when mirrored
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
+  if (!mm.icon) ctx.fill();
   ctx.lineWidth = followed ? 2 : 1;
   ctx.strokeStyle = followed ? "#ffffff" : "rgba(11, 14, 20, 0.85)";
   ctx.stroke();
@@ -418,7 +430,9 @@ function drawDot(ctx: CanvasRenderingContext2D, mm: MapMember, r: number, dir: n
     ctx.arc(x, y, r + 3.5, 0, Math.PI * 2);
     ctx.stroke();
   }
-  ctx.fillStyle = mm.ink;
-  ctx.fillText(mm.label, x, y + 0.5);
+  if (!mm.icon) {
+    ctx.fillStyle = mm.ink;
+    ctx.fillText(mm.label, x, y + 0.5);
+  }
   ctx.globalAlpha = 1;
 }

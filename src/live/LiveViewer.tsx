@@ -421,7 +421,7 @@ export default function LiveViewer() {
           </div>
           {minimap && (
             <div className="pointer-events-none absolute bottom-3 left-3">
-              <Minimap stageRef={stageRef} mirror={mirror} onPick={(cid) => setFollowMember(follow === cid ? null : cid)} />
+              <Minimap stageRef={stageRef} iconBase={`${ASSET_BASE}/icons`} mirror={mirror} onPick={(cid) => setFollowMember(follow === cid ? null : cid)} />
             </div>
           )}
         </div>
