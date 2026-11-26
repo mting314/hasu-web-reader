@@ -3,19 +3,31 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
+  createEyeHighlightMaterial,
   createUberToonMaterial,
-  ExpressionController,
-  ExpressionPreset,
   restHipsHeight,
   retargetMotionClips,
   ToonMaterialParams,
 } from "../engine/UberToonMaterial";
+import { isGameCostume, prepareGameCostume, setToonLighting } from "../engine/gameToonMaterial";
+import { createFaceBonesCopier } from "../engine/faceBonesCopier";
+import { EmotionData, StoryEmotion } from "../engine/storyEmotion";
+import { FaceFlush } from "../engine/faceFlush";
 import { AudioMixer } from "../engine/AudioMixer";
-import { MotionHost, pickStoryMotionClips, playStoryMotion, updateStoryMotion } from "../engine/storyMotion";
+import {
+  DEFAULT_BREATHING_WEIGHT,
+  MotionHost,
+  playStoryMotion,
+  playTypeToState,
+  storyMotionClipList,
+  StoryMotionStart,
+  updateStoryMotion,
+} from "../engine/storyMotion";
 import {
   AssetManifest,
   CharacterState,
   DialogueTurn,
+  IntraEvent,
   ManifestCharacterAsset,
   ManifestPropAsset,
   PrefetchMode,
@@ -32,6 +44,9 @@ interface StageCanvasProps {
   resolution?: StageResolution;
   audioMixer: AudioMixer;
   onAdvance: () => void;
+  /** Called with the turn index once that line's stage assets (background, cast, their motions,
+   * props) have loaded or failed: the reader holds the line until then. */
+  onStageReady?: (turnIndex: number) => void;
 }
 
 interface LoadedCharacter extends MotionHost {
@@ -39,14 +54,19 @@ interface LoadedCharacter extends MotionHost {
   costumeId: string;
   rootGroup: THREE.Group;
   modelScene: THREE.Object3D;
-  expressionCtrl: ExpressionController;
-  expressions: Map<string, ExpressionPreset>;
+  /** the game's EmotionHandler (expression, blink, AB lip flap) */
+  emotion: StoryEmotion;
+  /** the game's FlushingController (cheek blush, [顔紅潮操作]) */
+  flush: FaceFlush;
+  currentBlush: number | null;
   /** Start key (`motionCmd`) of the motion last requested, and of the one actually playing */
   requestedMotion: string | null;
   appliedMotion: string | null;
   currentEmotion: string | null;
   /** Motion clips retargeted to this character, per motion id (reused so actions are too). */
   motionClips: Map<string, Promise<THREE.AnimationClip[]>>;
+  /** The game's FaceBonesCopier: puts the separate face rig on the animated body each frame */
+  copyFaceBones: (() => void) | null;
 }
 
 interface LoadedProp {
@@ -58,10 +78,36 @@ interface LoadedProp {
 const gltfCache = new Map<string, Promise<any>>();
 const textureCache = new Map<string, THREE.Texture>();
 const texturePromiseCache = new Map<string, Promise<THREE.Texture>>();
-const expressionJsonCache = new Map<string, Promise<ExpressionPreset[]>>();
+const emotionDataCache = new Map<string, Promise<EmotionData | null>>();
 const toonParamsCache = new Map<string, Promise<Record<string, ToonMaterialParams>>>();
 const audioWarmCache = new Map<string, Promise<void>>();
 const warmedAssetKeys = new Set<string>();
+
+/**
+ * Scene lighting for the game's toon shader, from the story player's own scene (level9 in the
+ * app's data.unity3d): `StoryScene.directionalLight` is a directional light with colour (1, 1, 1),
+ * intensity 1 and rotation (0, 0, 0), i.e. shining along +z, the way the story camera looks.
+ * `[ライト回転]` / `[ライト光源色変更]` change it per line (not used in episode 1, not built yet).
+ * Ambient is the scene's skybox probe; the toon shader only uses it as a floor under the light
+ * colour (max(sRGB(SH), 0.1)), so with this light it has no effect. Its constant term here is the
+ * stored probe's L0 - L2(m=0) per channel (unverified packing, irrelevant at light 1).
+ */
+const STORY_LIGHTING = {
+  lightEulerUnity: [0, 0, 0] as [number, number, number],
+  color: [1, 1, 1] as [number, number, number],
+  ambientSH: [0.1014, 0.104, 0.0928] as [number, number, number],
+};
+
+/** For a character without emotion data: the face keeps its rest shapes. */
+const NO_EMOTION_DATA: EmotionData = {
+  AvatarName: "", TransitionTime: 0, BlinkData: null, LipSyncData: [], LipABData: [], Emotions: [],
+};
+/**
+ * The game gates its AB mouth flap on CRI's voice analysis returning any vowel energy; the reader
+ * gates on its own loudness estimate (AudioMixer.getLipSync level, 0 = silent). UNKNOWN: the
+ * threshold is ours, not the game's.
+ */
+const VOICE_AUDIBLE_LEVEL = 0.08;
 
 const sharedGltfLoader = new GLTFLoader();
 const sharedTexLoader = new THREE.TextureLoader();
@@ -131,14 +177,14 @@ function prewarmTextureAsync(url: string, flipY = false): Promise<THREE.Texture>
   return texturePromiseCache.get(key) ?? Promise.resolve(textureCache.get(key)!);
 }
 
-function loadExpressionsCached(url: string): Promise<ExpressionPreset[]> {
-  let p = expressionJsonCache.get(url);
+/** A character's Tecotec.EmotionData (`3d/emotions/emotion_<name>.json`); null if missing. */
+function loadEmotionDataCached(url: string): Promise<EmotionData | null> {
+  let p = emotionDataCache.get(url);
   if (!p) {
     p = fetch(url)
-      .then((r) => (r.ok ? r.json() : { expressions: [] }))
-      .then((d) => d.expressions || [])
-      .catch(() => []);
-    expressionJsonCache.set(url, p);
+      .then((r) => (r.ok ? (r.json() as Promise<EmotionData>) : null))
+      .catch(() => null);
+    emotionDataCache.set(url, p);
   }
   return p;
 }
@@ -160,7 +206,7 @@ function prewarmAudioAsync(url: string): Promise<void> {
 export async function prewarmCharacterAsset(c: ManifestCharacterAsset): Promise<void> {
   await Promise.all([
     loadGltfCached(sharedGltfLoader, c.glbUrl).catch(() => null),
-    c.expressionsUrl ? loadExpressionsCached(c.expressionsUrl) : Promise.resolve(),
+    c.emotionDataUrl ? loadEmotionDataCached(c.emotionDataUrl) : Promise.resolve(),
     loadToonParamsCached(c.glbUrl),
     c.eyeHighlightUrl ? prewarmTextureAsync(c.eyeHighlightUrl, false) : Promise.resolve(),
   ]);
@@ -437,7 +483,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   resolution = "auto",
   audioMixer,
   onAdvance,
+  onStageReady,
 }) => {
+  const onStageReadyRef = useRef(onStageReady);
+  onStageReadyRef.current = onStageReady;
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const [loadingCount, setLoadingCount] = useState(0);
@@ -453,6 +502,12 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const charactersRef = useRef<Map<string, LoadedCharacter>>(new Map());
   // Index of the turn shown before this one, to tell reading in order from a jump.
   const prevTurnIndexRef = useRef<number | null>(null);
+  // キャラ移動 with a duration: characters walking to a new spot (Three.js coordinates)
+  const charMovesRef = useRef(
+    new Map<string, { from: THREE.Vector3; to: THREE.Vector3; start: number; dur: number }>()
+  );
+  // 暗転 / ブラックアウト / 円 fades: a full-stage colour overlay
+  const fadeRef = useRef<HTMLDivElement | null>(null);
   const propsRef = useRef<Map<string, LoadedProp>>(new Map());
   const gltfLoaderRef = useRef(new GLTFLoader());
   const texLoaderRef = useRef(new THREE.TextureLoader());
@@ -498,6 +553,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
+      // the toon materials use stencil like the game (brows and eyes show through the fringe)
+      stencil: true,
       powerPreference: "high-performance",
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -514,7 +571,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     controls.enabled = cameraModeRef.current === "orbit";
     controlsRef.current = controls;
 
-    // Lighting
+    // Lighting for the game's toon shader (the costumes from scripts/export_costume.py)
+    setToonLighting(STORY_LIGHTING);
+    // Lighting for the older costume GLBs and the props
     const ambient = new THREE.AmbientLight(0xffffff, 1.15);
     scene.add(ambient);
     const dirLight = new THREE.DirectionalLight(0xfffaf0, 1.1);
@@ -574,13 +633,25 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         }
       }
 
+      // Characters walking (キャラ移動 with a duration)
+      for (const [name, move] of charMovesRef.current) {
+        const c = charactersRef.current.get(name);
+        if (!c) continue;
+        const t = Math.min(1, (now - move.start) / move.dur);
+        c.rootGroup.position.lerpVectors(move.from, move.to, t * t * (3 - 2 * t));
+        if (t >= 1) charMovesRef.current.delete(name);
+      }
+
       // Update character skeletal animations, facial morphs, and voice lip-sync
       const lip = audioMixer.getLipSync();
       const speaker = activeSpeakerJpRef.current;
       for (const char of charactersRef.current.values()) {
         updateStoryMotion(char, dt);
-        char.expressionCtrl.setLipSync(char.name === speaker ? lip.level : 0, lip.vowel);
-        char.expressionCtrl.update(dt);
+        char.copyFaceBones?.();
+        // The game's lip-sync callback fires PlayABLip while the voice analysis hears anything
+        if (char.name === speaker && lip.level > VOICE_AUDIBLE_LEVEL) char.emotion.voiceActive();
+        char.emotion.update(dt);
+        char.flush.update(dt);
       }
 
       renderer.render(scene, camera);
@@ -639,31 +710,51 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
   }, [cameraMode]);
 
+  // How a motion starts, from its command (snapshot or event): `startsNow` = the command runs on
+  // screen now; otherwise the motion was already running (a jump) and resumes in its loop.
+  const motionStartFor = (
+    src: {
+      motionPlayType?: number | null;
+      motionImmediate?: boolean;
+      immediate?: boolean;
+      motionNormalizedTime?: number | null;
+      motionBreathing?: number | null;
+    },
+    startsNow: boolean
+  ): StoryMotionStart => {
+    const breathing = src.motionBreathing ?? DEFAULT_BREATHING_WEIGHT;
+    if (!startsNow) return { state: "loop", blend: true, breathing };
+    const immediate = Boolean(src.motionImmediate ?? src.immediate);
+    return {
+      state: playTypeToState(src.motionPlayType ?? 2),
+      blend: !immediate,
+      normalizedTime: immediate ? src.motionNormalizedTime ?? undefined : undefined,
+      breathing,
+    };
+  };
+
   // Apply a motion to a loaded character. `startKey` names the script command that started it
-  // (`motionCmd`), so the same motion started again is told apart from one still running. With
-  // `playIntro` the in/action clips play before the loop (the motion starts on screen); without
-  // it, the motion resumes in its loop.
+  // (`motionCmd`), so the same motion started again is told apart from one still running.
   const applyCharacterMotion = async (
     char: LoadedCharacter,
     motionId: string,
     motionUrl: string | null,
     startKey: string,
-    playIntro: boolean
+    start: StoryMotionStart
   ) => {
     if (!motionUrl || char.requestedMotion === startKey) return;
     char.requestedMotion = startKey;
     try {
       let clipsPromise = char.motionClips.get(motionId);
       if (!clipsPromise) {
-        clipsPromise = loadGltfCached(gltfLoaderRef.current, motionUrl).then((gltf) => {
-          const { intro, loop } = pickStoryMotionClips(gltf.animations || [], motionId);
-          return retargetMotionClips(gltf.scene, loop ? [...intro, loop] : intro, char.modelScene);
-        });
+        clipsPromise = loadGltfCached(gltfLoaderRef.current, motionUrl).then((gltf) =>
+          retargetMotionClips(gltf.scene, storyMotionClipList(gltf.animations || [], motionId), char.modelScene)
+        );
         char.motionClips.set(motionId, clipsPromise);
       }
       const clips = await clipsPromise;
       if (char.requestedMotion !== startKey) return; // a newer motion was requested meanwhile
-      playStoryMotion(char, clips, motionId, playIntro);
+      playStoryMotion(char, clips, motionId, start);
       char.appliedMotion = startKey;
     } catch (e) {
       // Fall back to what's actually playing, so a later request retries this motion.
@@ -673,15 +764,12 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
   };
 
-  // Helper to apply an expression preset to a loaded character
-  const applyCharacterEmotion = (char: LoadedCharacter, emotionId: string) => {
+  // [キャラ表情変更]: `transitionSec` from the command (-1 = the data's TransitionTime); a
+  // snapshot (jumping to a line) applies at once, like the game skipping a line
+  const applyCharacterEmotion = (char: LoadedCharacter, emotionId: string, useTransition: boolean, transitionSec = -1) => {
     if (char.currentEmotion === emotionId) return;
     char.currentEmotion = emotionId;
-    const preset =
-      char.expressions.get(emotionId) ||
-      char.expressions.get(emotionId.replace(/-Close$/i, "")) ||
-      char.expressions.get("NORMAL_TUUJO");
-    char.expressionCtrl.applyPreset(preset);
+    char.emotion.play(emotionId, useTransition, transitionSec);
   };
 
   // Helper to update camera transform target
@@ -706,6 +794,15 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     camToQuatRef.current.setFromEuler(euler);
     camAnimStartRef.current = now;
     camAnimDurRef.current = durationSec;
+  };
+
+  // Show or clear the fade overlay (暗転 = black, ブラックアウト, 円 wipes drawn as plain fades).
+  const applyFade = (fade: StageSnapshot["fade"] | undefined, durationSec: number) => {
+    const el = fadeRef.current;
+    if (!el || !fade) return;
+    el.style.transition = durationSec > 0 ? `opacity ${durationSec}s linear` : "none";
+    el.style.backgroundColor = fade.color || "#000000";
+    el.style.opacity = fade.active ? "1" : "0";
   };
 
   // Helper to update background quad state
@@ -755,14 +852,27 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
       setLoadingCount((c) => c + 1);
       try {
-        const [gltf, exprList, toonParams] = await Promise.all([
+        const [gltf, emotionData, toonParams] = await Promise.all([
           loadGltfCached(gltfLoaderRef.current, cState.glbUrl),
-          loadExpressionsCached(cState.expressionsUrl),
+          loadEmotionDataCached(cState.emotionDataUrl),
           loadToonParamsCached(cState.glbUrl),
         ]);
 
         // Process materials on the GLTF scene once
         const modelScene = gltf.scene as THREE.Object3D;
+        if (!modelScene.userData.__toonProcessed && isGameCostume(modelScene)) {
+          modelScene.userData.__toonProcessed = true;
+          restHipsHeight(modelScene);
+          // Shared, so a second sync of the same costume (React StrictMode mounts twice) waits
+          // for the textures too instead of using a half-prepared model.
+          modelScene.userData.__toonReady = prepareGameCostume(
+            modelScene,
+            (index) => gltf.parser.getDependency("texture", index),
+            (tex, unity) =>
+              createEyeHighlightMaterial(tex, { clip: unity.floats._AlphaClipThreshold ?? 0.5 })
+          );
+        }
+        await modelScene.userData.__toonReady;
         if (!modelScene.userData.__toonProcessed) {
           modelScene.userData.__toonProcessed = true;
           // Record the hips' rest height before any motion moves them (retargeting scales by it).
@@ -808,13 +918,11 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
             const shadowTex = mat?.aoMap as THREE.Texture | null;
 
             if (matName.includes("EyeHi") || matName.includes("Highlight")) {
-              node.material = new THREE.MeshBasicMaterial({
-                map: mainTex || eyeHiTex,
-                transparent: true,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false,
-              });
-              node.renderOrder = 2;
+              const hiTex = mainTex || eyeHiTex;
+              if (hiTex) {
+                node.material = createEyeHighlightMaterial(hiTex);
+                node.renderOrder = 2;
+              }
               return;
             }
             if (node.name === "Eye" || node.name.startsWith("Eye_")) {
@@ -854,23 +962,20 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         rootGroup.add(modelScene);
         sceneRef.current.add(rootGroup);
 
-        const exprMap = new Map<string, ExpressionPreset>();
-        for (const e of exprList) {
-          exprMap.set(e.name, e);
-        }
-
         loaded = {
           name: cState.name,
           costumeId: cState.costumeId,
           rootGroup,
           modelScene,
           mixer: new THREE.AnimationMixer(modelScene),
-          expressionCtrl: new ExpressionController(modelScene),
-          expressions: exprMap,
+          emotion: new StoryEmotion(modelScene, emotionData ?? NO_EMOTION_DATA),
+          flush: new FaceFlush(modelScene),
+          currentBlush: null,
           requestedMotion: null,
           appliedMotion: null,
           currentEmotion: null,
           motionClips: new Map(),
+          copyFaceBones: createFaceBonesCopier(modelScene),
         };
         charactersRef.current.set(cState.name, loaded);
       } catch (err) {
@@ -882,6 +987,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
 
     loaded.rootGroup.visible = enable3D && cState.visible;
+    charMovesRef.current.delete(cState.name);
     // Convert Unity (x, y, z) -> Three.js (x, y, -z)
     loaded.rootGroup.position.set(
       cState.position[0],
@@ -895,19 +1001,26 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       THREE.MathUtils.degToRad(cState.rotation[2])
     );
 
-    applyCharacterEmotion(loaded, cState.emotion);
+    // A change in the line's snapshot came from a command at the line's start: reading in order it
+    // plays like the game (expression blend, blush fade); jumping to a line applies it at once.
+    applyCharacterEmotion(loaded, cState.emotion, arrivedInOrder, cState.emotionTransitionSec ?? -1);
+    if (loaded.currentBlush !== (cState.blush ?? 0)) {
+      loaded.currentBlush = cState.blush ?? 0;
+      if (arrivedInOrder) loaded.flush.play(loaded.currentBlush, cState.blushFadeSec ?? 0);
+      else loaded.flush.set(loaded.currentBlush);
+    }
     // The motion starts on screen if its command belongs to this line, or to the previous line
     // when reading in order (a mid-line command the reader clicked past before it ran; the game
     // runs the rest of a line's commands at the click). Otherwise it was already running.
-    const start = cState.motionStartTurn;
+    const startTurn = cState.motionStartTurn;
     const startsHere =
-      start !== undefined && (start === turnIndex || (arrivedInOrder && start === turnIndex - 1));
+      startTurn !== undefined && (startTurn === turnIndex || (arrivedInOrder && startTurn === turnIndex - 1));
     await applyCharacterMotion(
       loaded,
       cState.motionId,
       cState.motionUrl,
       cState.motionCmd ?? cState.motionId,
-      startsHere && !cState.motionImmediate
+      motionStartFor(cState, startsHere)
     );
   };
 
@@ -1033,12 +1146,17 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
     }
     setCameraTarget(snap.camera.position, snap.camera.rotation, initialCamDur);
+    applyFade(snap.fade, 0);
 
-    // 3. Characters & Props
+    // 3. Characters & Props. Everything the line's first frame needs is collected so the reader
+    // can hold the line (voice, timeline, Next) until the stage is ready.
+    let cancelled = false;
+    const loads: Promise<unknown>[] = [];
+    if (snap.background.url) loads.push(prewarmTextureAsync(snap.background.url, true));
     const arrivedInOrder = prevTurnIndexRef.current === turn.index - 1;
     prevTurnIndexRef.current = turn.index;
     for (const cState of Object.values(snap.characters)) {
-      void syncCharacter(cState, turn.index, arrivedInOrder);
+      loads.push(syncCharacter(cState, turn.index, arrivedInOrder));
     }
     // Hide characters not present in snapshot
     for (const [name, loaded] of charactersRef.current.entries()) {
@@ -1046,35 +1164,52 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         loaded.rootGroup.visible = false;
       }
     }
-    void syncProps(snap.props);
+    loads.push(syncProps(snap.props));
+    void Promise.allSettled(loads).then(() => {
+      if (!cancelled) onStageReadyRef.current?.(turn.index);
+    });
 
-    // 4. Schedule intra-turn choreography events (motions, emotions, camera cuts, waits)
-    const timers: number[] = [];
-    let delaySec = 0;
-    for (const ev of turn.intraEvents) {
-      if (ev.type === "wait") {
-        delaySec += Number(ev.seconds || 0);
-        continue;
-      }
-      const fireAtMs = Math.max(0, delaySec * 1000);
-      const timerId = window.setTimeout(() => {
-        if (ev.type === "char_motion") {
-          const c = charactersRef.current.get(ev.character);
+    // 4. Play the line's timeline. Events at the same moment are applied together, so a cut that
+    // shows one character, hides another and moves the camera never shows half-done. Events that
+    // change the camera, background, props, fades or music carry the state they leave behind
+    // (build_scenarios.event_state), applied with the same code as a line's starting snapshot.
+    const applyEvent = (ev: IntraEvent) => {
+      const c = ev.character ? charactersRef.current.get(ev.character) : undefined;
+      switch (ev.type) {
+        case "char_motion":
           if (c && ev.motionUrl) {
-            void applyCharacterMotion(c, ev.motionId, ev.motionUrl, ev.motionCmd ?? ev.motionId, !ev.immediate);
+            void applyCharacterMotion(c, ev.motionId, ev.motionUrl, ev.motionCmd ?? ev.motionId, motionStartFor(
+                {
+                  motionPlayType: ev.motionPlayType,
+                  immediate: ev.immediate,
+                  motionNormalizedTime: ev.motionNormalizedTime,
+                  motionBreathing: ev.motionBreathing,
+                },
+                true
+              ));
           }
-        } else if (ev.type === "char_emotion") {
-          const c = charactersRef.current.get(ev.character);
+          break;
+        case "char_blush":
+          // FaceFlushingCommand: FaceFlushPlay(level, fade) when fading, else (level, 0)
           if (c) {
-            applyCharacterEmotion(c, ev.emotion);
+            c.currentBlush = ev.blush ?? 0;
+            c.flush.play(ev.blush ?? 0, (ev.fadeSec ?? 0) > 0 ? ev.fadeSec : 0);
           }
-        } else if (ev.type === "char_visibility") {
-          const c = charactersRef.current.get(ev.character);
-          if (c) {
-            c.rootGroup.visible = enable3D && Boolean(ev.visible);
-          }
-        } else if (ev.type === "char_rotate") {
-          const c = charactersRef.current.get(ev.character);
+          break;
+        case "char_lip":
+          // CharaLipCommand: PlayABLip(sec, interval or its DEFAULT_LIP_INTERVAL 0.125)
+          if (c) c.emotion.playABLip(ev.durationSec ?? 0, ev.intervalSec ?? 0.125);
+          break;
+        case "char_emotion":
+          if (c) applyCharacterEmotion(c, ev.emotion, true, ev.transitionSec ?? -1);
+          break;
+        case "char_visibility":
+          if (c) c.rootGroup.visible = enable3D && Boolean(ev.visible);
+          break;
+        case "char_hide":
+          if (c) c.rootGroup.visible = false;
+          break;
+        case "char_rotate":
           if (c && Array.isArray(ev.rotation)) {
             c.rootGroup.rotation.set(
               THREE.MathUtils.degToRad(ev.rotation[0]),
@@ -1082,23 +1217,81 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
               THREE.MathUtils.degToRad(ev.rotation[2])
             );
           }
-        } else if (ev.type === "se_play" && ev.seUrl) {
+          break;
+        case "char_spawn":
+          if (ev.characterState) void syncCharacter(ev.characterState, turn.index, false);
+          break;
+        case "char_move":
+          if (c && Array.isArray(ev.position)) {
+            const to = new THREE.Vector3(ev.position[0], ev.position[1], -ev.position[2]);
+            const dur = Number(ev.duration || 0);
+            if (dur > 0) {
+              charMovesRef.current.set(ev.character, {
+                from: c.rootGroup.position.clone(),
+                to,
+                start: performance.now() / 1000,
+                dur,
+              });
+            } else {
+              charMovesRef.current.delete(ev.character);
+              c.rootGroup.position.copy(to);
+            }
+          }
+          break;
+        case "camera_move":
+        case "camera_rotate":
+          if (ev.camera) setCameraTarget(ev.camera.position, ev.camera.rotation, Number(ev.duration || 0));
+          break;
+        case "bg_show":
+        case "bg_move":
+        case "bg_rotate":
+          if (ev.background) {
+            const bg = ev.background;
+            applyBackgroundState(bg.url, bg.position, bg.scale, bg.rotation, Number(ev.duration || 0));
+          }
+          break;
+        case "prop_show":
+        case "prop_hide":
+          if (ev.props) void syncProps(ev.props);
+          break;
+        case "fade":
+          applyFade(ev.fade ?? ev, Number(ev.duration || 0));
+          break;
+        case "bgm_play":
+        case "bgm_stop":
+          if (ev.audio) audioMixer.syncBgm(ev.audio.bgmUrl, ev.audio.bgmVolume);
+          break;
+        case "se_play":
+          if (!ev.seUrl) break;
           if (ev.loop) {
-            audioMixer.startAmbience(
-              { id: ev.seId, url: ev.seUrl, volume: ev.volume ?? 1.0 },
-              ev.fadeSec ?? 0
-            );
+            audioMixer.startAmbience({ id: ev.seId, url: ev.seUrl, volume: ev.volume ?? 1.0 }, ev.fadeSec ?? 0);
           } else {
             audioMixer.playOneShotSe(ev.seId, ev.seUrl, ev.volume ?? 1.0, ev.fadeSec ?? 0);
           }
-        } else if (ev.type === "se_stop") {
+          break;
+        case "se_stop":
           audioMixer.stopAmbience(ev.seId, ev.fadeSec ?? 0);
-        }
-      }, fireAtMs);
-      timers.push(timerId);
+          break;
+        // char_lookat: no look-at yet
+      }
+    };
+    const moments: { atSec: number; events: IntraEvent[] }[] = [];
+    let delaySec = 0;
+    for (const ev of turn.intraEvents) {
+      if (ev.type === "wait") {
+        delaySec += Number(ev.seconds || 0);
+        continue;
+      }
+      const last = moments[moments.length - 1];
+      if (last && last.atSec === delaySec) last.events.push(ev);
+      else moments.push({ atSec: delaySec, events: [ev] });
     }
+    const timers = moments.map(({ atSec, events }) =>
+      window.setTimeout(() => events.forEach(applyEvent), Math.max(0, atSec * 1000))
+    );
 
     return () => {
+      cancelled = true;
       for (const t of timers) {
         window.clearTimeout(t);
       }
@@ -1123,6 +1316,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }}
     >
       <div ref={mountRef} className="w-full h-full" />
+      <div ref={fadeRef} aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ opacity: 0 }} />
       {ripples.map((r) => (
         <span
           key={r.id}

@@ -5,7 +5,7 @@ Local Asset Cacher for hasu-web-reader.
 Scans one or more raw ADV script files (story_main_<ScriptId>.txt), resolves all referenced:
   - 3D Costume GLBs + eye highlight textures
   - 3D Story Prop (ppadv) GLBs + extraGlbs + textureMap textures
-  - Character facial expression JSONs (<char>_expressions.json)
+  - Character emotion data (3d/emotions/emotion_<name>.json, from scripts/export_emotions.py)
   - 3D Skeletal Motion GLBs (mot_*.glb)
   - 2D Story Background WebPs (story_bg_image_*.webp)
   - Character mini portrait icons (charamini_icon_face_sd_<charId>_01.webp)
@@ -50,8 +50,8 @@ CHAR_JP_TO_INFO = {
     "吟子": {"id": 1041, "en": "ginko"},
     "小鈴": {"id": 1042, "en": "kosuzu"},
     "姫芽": {"id": 1043, "en": "hime"},
-    "セラス": {"id": 1051, "en": "ceras"},
-    "泉": {"id": 1052, "en": "izumi"},
+    "セラス": {"id": 1052, "en": "ceras"},
+    "泉": {"id": 1051, "en": "izumi"},
     "沙知": {"id": 1011, "en": "sachi"},
 }
 
@@ -114,7 +114,7 @@ def cache_scripts(script_ids: list[str]) -> None:
     voices: set[str] = set()
     ses: set[str] = set()
     bgms: set[str] = set()
-    chars_en: set[str] = {"kaho", "sayaka", "kozue", "tsuzuri", "rurino", "megumi"}
+    emotions: set[str] = set()
     char_ids: set[int] = {info["id"] for info in CHAR_JP_TO_INFO.values()}
 
     for sid in script_ids:
@@ -123,6 +123,7 @@ def cache_scripts(script_ids: list[str]) -> None:
             raise FileNotFoundError(f"Missing script file: {txt_path}")
         text = txt_path.read_text(encoding="utf-8")
         costumes |= set(re.findall(r"3d_costume_\d+", text))
+        emotions |= set(re.findall(r"\[キャラ表示\s+\S+\s+\S+\s+(emotion_[^\s\]]+)", text))
         props |= set(
             re.findall(
                 r"\[(?:3Dオブジェクト表示|キャラ小物直接表示|キャラ小物表示)\s+(?:[^\s\]]+\s+)*?(ppadv\S+)",
@@ -139,10 +140,10 @@ def cache_scripts(script_ids: list[str]) -> None:
     tasks: list[tuple[str, Path]] = []
     optional: set[Path] = set()  # may legitimately be absent from the bucket
 
-    # 1. Motions metadata & Expression JSONs
+    # 1. Motions metadata & emotion data
     tasks.append((f"{GCS_BASE}/3d/metadata/motions.json", PUBLIC_ASSETS_DIR / "3d/metadata/motions.json"))
-    for cen in sorted(chars_en):
-        rel = f"3d/animations/{cen}_expressions.json"
+    for name in sorted(emotions):
+        rel = f"3d/emotions/{name}.json"
         tasks.append((f"{GCS_BASE}/{rel}", PUBLIC_ASSETS_DIR / rel))
 
     # 2. Costumes & Props (GLB + extraGlbs + textures + textureMap)

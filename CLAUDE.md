@@ -90,7 +90,7 @@ loads and `fetch()` as a backstop. `VITE_REMOTE_ASSET_PREFIXES` limits which pat
 3d/costume/<costumeId>/SCSch0NN<Chr>_Eye_highlightmain.png
 3d/ppadv/<propId>/<propId>.glb (+ extra GLBs, .webp textures)   story props / sets
 3d/motions/mot_00_NNNNN.glb                          body animations
-3d/animations/<char>_expressions.json                facial expression presets
+3d/emotions/emotion_<name>.json                     the game's EmotionData per character
 3d/metadata/motions.json                             motion id -> description
 story/backgrounds/story_bg_image_NNN.webp            2D backgrounds (000 = none)
 story/voice/vo_adv_<scriptId>_<seq4>_m<charId>_01[@<name>].webm   voice (Opus)
@@ -102,18 +102,26 @@ assets/charaicon/charamini_icon_face_sd_<charId>_01.webp
 - **Script ids** `TTTEEEPP`: `10300101` = 103rd term, episode 001, part 01. URL/data-file slug
   `103-ep1-part1` (`src/storySlug.ts`, `slug_for_script_id` in `scripts/build_scenarios.py`).
 - **Character ids**: 1031 Kaho, 1032 Sayaka, 1033 Rurino, 1021 Kozue, 1022 Tsuzuri, 1023 Megumi,
-  1041 Ginko, 1042 Kosuzu, 1043 Hime, 1051 Ceras, 1052 Izumi, 1011 Sachi; NPCs use 9xxx
+  1041 Ginko, 1042 Kosuzu, 1043 Hime, 1051 Izumi, 1052 Ceras, 1011 Sachi; NPCs use 9xxx
   (9009 = the dorm mother, 寮母).
 - **Costume ids** `3d_costume_1001<charId><variant>`: `3d_costume_1001103101` = Kaho in the
   school uniform used in episode 1. Unity names: `SCSch011Kah` (body), `SCSch011Kah_Face_normal`.
 
 ## What's inside
 
-**Costume GLBs.** Body skeleton bones are `<Chr>DeA_*` (e.g. `KahDeA_Hips`). The face is a
-separate rig (`<Chr>_Spine_03/Neck/Head`, eye bones) parented under the body head through a
-`3d_face_<id>` node. The Face/Brow/EyeShadow meshes are skinned to the single `<Chr>_Head`
-bone, so all facial deformation is blendshapes. `*_outline` meshes are hidden (the outline
-pass isn't implemented); `IndoorShoes` is hidden.
+**Costume GLBs** (`scripts/export_costume.py`, from the prefab bundle and its dependency closure).
+Body skeleton bones are `<Chr>DeA_*` (e.g. `KahDeA_Hips`). The face is a separate rig
+(`<Chr>_Spine_03/Neck/Head`, eye bones) under `3d_face_<id>`, a **sibling** of the body, not its
+child: `Inspix.FaceBonesCopier.LateUpdate` (RVA 0x4F4A440) copies the body's UpperChest world
+position/rotation onto `<Chr>_Spine_03` and the local rotations of Neck, Head and the eyes onto
+the face bones every frame (`src/engine/faceBonesCopier.ts`; the exporter records the pairs as
+node extras `faceBonesCopier`). Face/Brow/EyeShadow are skinned to `<Chr>_Head`; the Eye mesh is
+one-bone-per-vertex (a blend-index channel and no weights: each iris follows its eye bone).
+The GLB keeps the complete Unity material in `material.extras.unity` (shader, keywords, floats,
+colours, texture slots), each renderer's root bone (`extras.rootBone`) and the prefab's inactive
+objects / disabled renderers (`extras.active` / `rendererEnabled` = false, hidden by the reader).
+Older hamproductions-derived costume GLBs (with `*_outline` meshes) still load through the old
+material path until every costume is re-exported.
 
 **Costume prefabs and MonoBehaviours (`3d_costume_<id>`).** While `__scsch0NN<chr>dea.fbx` holds
 only the bare body FBX (`GameObject`, `Transform`, `SkinnedMeshRenderer`, `Mesh`, `Avatar`), the
@@ -148,20 +156,28 @@ face FBX (`__scsch011kah_face_normal.fbx`), materials, and runtime Unity compone
   - `CryEyeController` toggles `_UseCryParameters` on the eye highlight/distortion materials.
 
 **Blendshapes and expressions.** Names are `<Mesh>_.<Shape>` (`Face_.Mouth_Smile`,
-`Brow_.Eyebrow_Angry`, `EyeShadow_.Eyelids_Close_L`, `Eye_.Eyelids_pupil`). Presets in
-`<char>_expressions.json` are `{name, description, shapes: {shape: 0–100}}`;
-`[キャラ表情変更 <char> <preset>]` selects one, and `-Close` variants are the eyes-closed version.
-Every `Mouth_*` shape is a complete mouth pose authored against the neutral mesh, and
-`Mouth_Normal` is effectively the neutral mesh. **Never stack mouth shapes**: two at once push
-the teeth/tongue through the face. Lip-sync crossfades the expression's mouth out while the
-vowel shape of the same family fades in (`Mouth_Smile` → `Mouth_Smile_A/I`, `Mouth_Sulk` →
-`Mouth_Sulk_A…O`, falling back to plain `Mouth_A…O`). See `ExpressionController` in
-`src/engine/UberToonMaterial.ts`.
+`Brow_.Eyebrow_Angry`, `EyeShadow_.Eyelids_Close_L`, `Eye_.Eyelids_pupil`). Expressions come from
+the game's `Tecotec.EmotionData`, exported by `scripts/export_emotions.py` to
+`3d/emotions/emotion_<name>.json` (the name is the 3rd argument of `[キャラ表示]`). Each emotion
+sets every key (0–100) of the Face/Brow/EyeShadow/Eye meshes; `src/engine/storyEmotion.ts` ports
+`Tecotec.EmotionHandler` (see "Expressions, blinking, lip-sync" below). The old hand-made
+`<char>_expressions.json` presets are no longer used.
 
-**Materials.** The game uses `MELPOT/Toon/UberToonShader`; `createUberToonMaterial` is the
-Three.js port. `<costumeId>_materials.json` (`{source, shader, materials}`) carries the per-material
-values, written by `scripts/export_toon_materials.py` from the model export. Colors are stored
-as sRGB, the shader works in linear.
+**Materials.** The game uses `MELPOT/Toon/UberToonShader`. `scripts/msl_to_glsl.py` converts its
+compiled programs (Metal source in `__ubertoonshader.shader`: ForwardLit 6/14 and Outline 1/4;
+every other variant in the bundle is byte-identical) to GLSL in `src/engine/shaders/uberToonGame.ts`,
+and `src/engine/gameToonMaterial.ts` runs them as three.js materials with each material's stored
+values and render state (cull, depth, blend, stencil: brows and eyes write 201 and the hair skips
+201, so they show through the fringe; the renderer needs `stencil: true`). Unity's object space
+for a skinned mesh is its root bone. **The project renders in Gamma space**
+(`PlayerSettings.m_ActiveColorSpace = 0` in the APK's data): textures are sampled raw and colours
+used as stored, with no output encoding. The story light is the APK scene's directional light
+(level9, `StoryScene.directionalLight`): colour (1, 1, 1), intensity 1, rotation (0, 0, 0), i.e.
+from the camera side; `[ライト回転]` / `[ライト光源色変更]` change it (not built yet). Characters
+are layer 21, drawn by the story renderer's `CustomRenderObjects` feature after opaques with
+`[UniversalForward, Outline, SRPDefaultUnlit]`, so each outline follows its own lit pass; MSAA is
+2× (`_AlphaToMaskAvailable` = 1). The eye shader (`Character/ToonShader_CharacterEye`) isn't
+ported yet (unlit stand-in).
 
 **Motions.** A motion GLB has the skeleton plus clips `m_00_NNNNN@i/@a/@l/@o` (in, action,
 loop, out; one motion, `mot_00_00040`, names them `@r@i` etc.), `m_breathing@l` and hand grip
@@ -184,9 +200,10 @@ What the controllers say (all 144 that episode 1 uses, dumped with UnityPy):
 `src/engine/storyMotion.ts` reproduces exactly that subset instead of a general blender: one clip
 plays per character, the next starts when it ends with the leftover time carried over, and a new
 motion blends in from the pose on screen, frozen at the switch (what a Unity transition does
-when it starts mid-animation). The switch blend is 0.28 s, the original reader's guess; the game
-uses **0.5 s** and a different start state (see "Story motions" below), and storyMotion.ts
-should be brought in line with it.
+when it starts mid-animation). It follows the game's code (see "Story motions" below): the
+playType picks the start state (scripts almost always pass 2, so motions start at `@a`), the
+switch blend is 0.5 s, playType 0 plays the old `@o` first, the 4th argument is the additive
+breathing weight (default 0.2), and `即時再生` jumps to a normalized time with no blend.
 `updateStoryMotion` replaces `mixer.update` in the render loop. Two three.js traps it handles:
 the mixer only writes a property when its animated value changes (a held pose stops being written
 after one frame), so anything that edits bones after `mixer.update` must put the mixer's values
@@ -346,8 +363,23 @@ with the per-character `emotion_<char>` bundle (`Tecotec.EmotionData`). For Kaho
 (`CloseTime 0.1`, `CloseStayTime 0.1`, `OpenFadeTime 0.1`, `Eyelids_Close_L/R` at 100);
 lip-sync on `Mouth_A…O`, plus an A/B mode (`Mouth_A`, `LipWeights [0, 40, 70]`,
 `LipInterval 0.125` s); 46 named emotions, each with `OverrideBlink` (1 = no blinking),
-`OverrideLipSync`, `UnuseTransition` and its blendshape keys. Read these values from the bundle
-instead of hand-tuning `<char>_expressions.json`.
+`OverrideLipSync`, `UnuseTransition` and its blendshape keys. Decoded and ported in
+`src/engine/storyEmotion.ts` (method names and RVAs in its comments):
+- `PlayEmotion` lerps every key linearly from the weights on screen (read back as ints) over
+  `TransitionTime`, or the command's 3rd argument (`[キャラ表情変更 c NAME 0.7]`, 0 = instant).
+- Blink only for emotions without `OverrideBlink` (for Kaho 3 of 46): the timer runs only while
+  no blink or expression transition is active; close linearly over `CloseTime`, hold
+  `CloseStayTime`, then the eyelids **snap** back on the first open frame (verified in
+  `TransitionBlink`, 0x4979A38). No randomness.
+- **Story lip-sync is an A/B flap, not vowels**: while a voice is audible the CRI lip-sync callback
+  calls `PlayABLip`, which every `LipInterval` sets `Face_.Mouth_A` to a random entry of
+  `LipWeights` (never the same index twice) **on top of** the expression's mouth; 0.2 s after the
+  last pulse the vowel keys snap back. `PlayLipSync` (per-vowel) is never called.
+  `[キャラ口パク開始 c sec]` runs the same flap for `sec` seconds without a voice.
+- `[顔紅潮操作 c lv fade]` (`SchoolTears.FlushingController`, `src/engine/faceFlush.ts`) fades
+  `_SecondaryColor.a` on the face material (secondary texture `face_cheek_cry`) over 0.1–10 s.
+  The shipped iOS UberToon programs never sample `_SecondaryTex`, so nothing is drawn (Android's
+  shader is unchecked).
 
 ### Look-at (`Tecotec.CharaLookCommand`, `ModelHandler.OnIKPass`)
 
@@ -386,13 +418,10 @@ weights (e.g. three-vrm's `VRMLookAt`), not a custom IK solver.
 ## Known gaps (episode 1)
 
 The build prints referenced assets that aren't in the store. Currently unavailable or wrong:
-- until branch `motion-sequencing` is merged, the reader plays only each motion's `@l` clip
-  (see Motions above), so gestures don't show, and non-Kaho characters stand at Kaho's hip
-  height. The branch also has the build record, in every character snapshot and motion event,
-  which command started the motion (`motionCmd` = `<scriptId>:<line>`), the turn it belongs to
-  (`motionStartTurn`) and whether it was `即時再生` (`motionImmediate`). The player decides
-  "did this motion start on this line?" from those facts instead of guessing; before, 125 of
-  ep1's motion starts were indistinguishable from motions already running
+- no look-at yet (`キャラ視線変更` is a no-op), the eye shader is a stand-in, and the light
+  commands aren't built
+- only the four episode-1 costumes are re-exported with `scripts/export_costume.py`; the bucket
+  still has the old ones
 - the reader starts at the first line, so a motion played during an episode's opening fade-in
   (e.g. line 11 of 10300102) isn't shown
 - secondary motion and helper-bone constraints aren't wired up in the reader yet. As documented
@@ -413,4 +442,11 @@ The build prints referenced assets that aren't in the store. Currently unavailab
 
 - In zsh, don't use `path` as a loop variable; it's tied to `$PATH`.
 - Chrome can't be launched from Claude Code on this machine (sandbox). For browser checks, the
-  user starts Chrome with `--remote-debugging-port`, then `agent-browser connect <port>`.
+  user starts Chrome with `--remote-debugging-port`; attach with `agent-browser --cdp <port>`.
+  Chrome reports the tab `hidden` when its window is behind VS Code, which stops
+  requestAnimationFrame and smooth scrolling (stale screenshots). The VS Code browser stays
+  visible but has no Opus decoder (voices/SEs are silent there).
+- The APK's built-in Unity data (`data.unity3d`: story scene, URP assets, PlayerSettings) is in
+  `data-inspect/apk/`, pulled from the `hasu-archive-mover` VM (SSH only via
+  `--tunnel-through-iap`). Script MonoBehaviours there have no type trees: find them by the raw
+  header (GameObject, enabled, Script PPtr, name) and decode fields in `dump.cs` order.

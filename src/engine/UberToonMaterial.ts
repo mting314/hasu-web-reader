@@ -107,10 +107,10 @@ void main() {
   vec3 finalColor = (uAmbientMode > 0.5 ? (litColor + uAmbientColor) : (litColor * uAmbientColor)) + rimResult;
   finalColor = max(finalColor, vec3(0.00001));
 
+  // The game renders in gamma space (its URP shaders convert the ambient SH term to sRGB, which
+  // URP only compiles in for Gamma projects): textures are sampled raw, the shading math runs on
+  // gamma values and the result is written as is. So no output encoding here.
   gl_FragColor = vec4(finalColor, mainCol.a);
-  // ShaderMaterial gets no automatic output conversion: encode linear -> renderer.outputColorSpace
-  // so toon surfaces match the built-in materials (eyes) drawn next to them.
-  #include <colorspace_fragment>
 }
 `;
 
@@ -124,6 +124,57 @@ export interface ToonMaterialParams {
   shadow2Tex?: string | null;
 }
 
+/**
+ * The game's eye highlight (`Character/ToonShader_CharacterHighlight`): the texture colour times
+ * the material colour and light, drawn opaque where its luminance reaches the clip threshold
+ * (alpha-to-coverage softens the edge), not blended on top.
+ */
+const EYE_HIGHLIGHT_FRAGMENT = /* glsl */ `
+uniform sampler2D uMainTex;
+uniform vec3 uMainColor;
+uniform vec3 uLightColor;
+uniform vec3 uAmbientColor;
+uniform float uAmbientMode;
+uniform float uClip;
+varying vec2 vUv;
+
+void main() {
+  vec3 col = texture2D(uMainTex, vUv).rgb * uMainColor;
+  float lum = dot(col, vec3(0.212672904, 0.715152204, 0.0721750036));
+  float w = max(fwidth(lum), 0.0001);
+  float coverage = clamp((lum - uClip) / w + 0.5, 0.0, 1.0);
+  if (coverage <= 0.0) discard;
+  vec3 lit = col * uLightColor;
+  gl_FragColor = vec4(uAmbientMode > 0.5 ? lit + uAmbientColor : lit * uAmbientColor, coverage);
+}
+`;
+
+/** Gamma-space rendering: sample a texture's stored values without sRGB decoding. */
+function useRaw(tex: THREE.Texture | null | undefined) {
+  if (tex && tex.colorSpace !== THREE.NoColorSpace) {
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+  }
+}
+
+export function createEyeHighlightMaterial(tex: THREE.Texture, opts?: { color?: [number, number, number]; clip?: number }) {
+  useRaw(tex);
+  const color = opts?.color ?? [1, 1, 1];
+  return new THREE.ShaderMaterial({
+    vertexShader: UBER_TOON_VERTEX,
+    fragmentShader: EYE_HIGHLIGHT_FRAGMENT,
+    uniforms: {
+      uMainTex: { value: tex },
+      uMainColor: { value: new THREE.Color().setRGB(color[0], color[1], color[2], THREE.LinearSRGBColorSpace) },
+      uLightColor: { value: new THREE.Color(1, 1, 1) },
+      uAmbientColor: { value: new THREE.Color(1, 1, 1) },
+      uAmbientMode: { value: 0 },
+      uClip: { value: opts?.clip ?? 0.5 },
+    },
+    alphaToCoverage: true,
+  });
+}
+
 export function createUberToonMaterial(opts: {
   mainTex: THREE.Texture;
   shadowTex?: THREE.Texture | null;
@@ -133,6 +184,7 @@ export function createUberToonMaterial(opts: {
   const mainTex = opts.mainTex;
   const shadowTex = opts.shadowTex || mainTex;
   const shadow2ndTex = opts.shadow2ndTex || shadowTex || mainTex;
+  [mainTex, shadowTex, shadow2ndTex].forEach(useRaw);
 
   const material = new THREE.ShaderMaterial({
     vertexShader: UBER_TOON_VERTEX,
@@ -165,176 +217,13 @@ export function createUberToonMaterial(opts: {
     const uniform = material.uniforms[name];
     if (!uniform) continue;
     if (Array.isArray(value)) {
-      // Unity stores material colors in sRGB; the shader works in linear.
-      (uniform.value as THREE.Color).setRGB(value[0], value[1], value[2], THREE.SRGBColorSpace);
+      // Gamma-space rendering, like the game: use the stored colour values as they are.
+      (uniform.value as THREE.Color).setRGB(value[0], value[1], value[2], THREE.LinearSRGBColorSpace);
     } else {
       uniform.value = value;
     }
   }
   return material;
-}
-
-export interface ExpressionPreset {
-  name: string;
-  description?: string;
-  shapes: Record<string, number>;
-}
-
-export type LipVowel = "A" | "I" | "U" | "E" | "O";
-const VOWELS: LipVowel[] = ["A", "I", "U", "E", "O"];
-// Mouth families only model some vowels (e.g. Smile has A and I); fall back to the closest.
-const VOWEL_FALLBACKS: Record<LipVowel, LipVowel[]> = {
-  A: ["A"],
-  I: ["I", "E"],
-  U: ["U", "O"],
-  E: ["E", "I"],
-  O: ["O", "A"],
-};
-const LIP_VOWEL_GAIN = 0.85;
-
-/**
- * Drives the face blendshapes: an expression layer (preset weights, eased) plus a
- * lip-sync layer on top.
- *
- * Every Mouth_* blendshape on these faces is a complete mouth pose authored against the
- * neutral mesh, so adding a vowel on top of the expression's mouth (Smile + A) stacks two
- * poses and pushes the teeth/tongue out. Instead the lip layer crossfades: the expression's
- * mouth shapes are scaled down by the speaking level while the vowel shape *of the same
- * family* (Smile -> Mouth_Smile_A / Mouth_Smile_I, Sulk -> Mouth_Sulk_*, ...) fades in.
- */
-export class ExpressionController {
-  private targets = new Map<string, Array<{ mesh: THREE.Mesh; index: number }>>();
-  private lowerToName = new Map<string, string>();
-  private current = new Map<string, number>();
-  private target = new Map<string, number>();
-  private lerpSpeed = 10;
-
-  /** e.g. "Face_." - the blendshape prefix of the mesh that owns Mouth_A */
-  private mouthPrefix = "Face_.";
-  /** vowel -> blendshape name without mesh prefix, e.g. "Mouth_Smile_A" */
-  private vowelRel: Record<LipVowel, string | null> = { A: null, I: null, U: null, E: null, O: null };
-  private lipTarget = 0;
-  private lipLevel = 0;
-  private lipVowel: LipVowel = "A";
-  private vowelMix: Record<LipVowel, number> = { A: 1, I: 0, U: 0, E: 0, O: 0 };
-  private relVowelWeight = new Map<string, number>();
-
-  constructor(root: THREE.Object3D) {
-    this.scan(root);
-    this.configureMouth(null);
-  }
-
-  private scan(root: THREE.Object3D) {
-    root.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.morphTargetDictionary && obj.morphTargetInfluences) {
-        for (const [name, index] of Object.entries(obj.morphTargetDictionary)) {
-          const list = this.targets.get(name) || [];
-          list.push({ mesh: obj, index });
-          this.targets.set(name, list);
-          this.current.set(name, 0);
-          this.target.set(name, 0);
-          this.lowerToName.set(name.toLowerCase(), name);
-          if (name.endsWith("Mouth_A")) this.mouthPrefix = name.slice(0, -"Mouth_A".length);
-        }
-      }
-    });
-  }
-
-  /** Exact (case-insensitive) blendshape lookup. Presets reference shapes some costumes
-   * lack; those are skipped rather than guessed, since a wrong guess can bind e.g. a
-   * mouth preset to an unrelated morph. */
-  private resolve(name: string): string | null {
-    if (this.targets.has(name)) return name;
-    return this.lowerToName.get(name.toLowerCase()) ?? null;
-  }
-
-  public applyPreset(preset: ExpressionPreset | undefined) {
-    for (const k of this.target.keys()) this.target.set(k, 0);
-    let dominantMouth: string | null = null;
-    let dominantWeight = 0;
-    for (const [shapeName, rawVal] of Object.entries(preset?.shapes ?? {})) {
-      const key = this.resolve(shapeName);
-      if (!key) continue;
-      const w = rawVal / 100;
-      this.target.set(key, w);
-      if (key.includes("Mouth_") && w > dominantWeight) {
-        dominantMouth = key;
-        dominantWeight = w;
-      }
-    }
-    this.configureMouth(dominantMouth);
-  }
-
-  /** Pick the vowel blendshapes that belong to the expression's mouth family. */
-  private configureMouth(dominantMouth: string | null) {
-    let family = "";
-    if (dominantMouth) {
-      const tail = dominantMouth.slice(dominantMouth.indexOf("Mouth_") + "Mouth_".length);
-      family = tail.split("_")[0]; // Sulk_U -> Sulk, Smile_Strong -> Smile
-      if (/^[AIUEO]$/.test(family) || family === "Normal") family = "";
-    }
-    const exists = (rel: string) => this.resolve(this.mouthPrefix + rel) !== null;
-    for (const v of VOWELS) {
-      let rel: string | null = null;
-      if (family) {
-        for (const fv of VOWEL_FALLBACKS[v]) {
-          if (exists(`Mouth_${family}_${fv}`)) {
-            rel = `Mouth_${family}_${fv}`;
-            break;
-          }
-        }
-      }
-      if (!rel && exists(`Mouth_${v}`)) rel = `Mouth_${v}`;
-      this.vowelRel[v] = rel;
-    }
-  }
-
-  /** level 0..1 (0 = not speaking), vowel = current mouth shape to aim for */
-  public setLipSync(level: number, vowel: LipVowel) {
-    this.lipTarget = Math.max(0, Math.min(1, level));
-    this.lipVowel = vowel;
-  }
-
-  public update(dt: number) {
-    const t = 1 - Math.exp(-this.lerpSpeed * dt);
-    // Lip level: fast attack, slower release, so syllables read as open/close movement
-    const lipRate = this.lipTarget > this.lipLevel ? 28 : 14;
-    this.lipLevel += (this.lipTarget - this.lipLevel) * (1 - Math.exp(-lipRate * dt));
-    const vowelRate = 1 - Math.exp(-18 * dt);
-    for (const v of VOWELS) {
-      this.vowelMix[v] += ((v === this.lipVowel ? 1 : 0) - this.vowelMix[v]) * vowelRate;
-    }
-    const lip = this.lipLevel < 0.01 ? 0 : this.lipLevel;
-    this.relVowelWeight.clear();
-    if (lip > 0) {
-      for (const v of VOWELS) {
-        const rel = this.vowelRel[v];
-        if (rel) this.relVowelWeight.set(rel, (this.relVowelWeight.get(rel) ?? 0) + this.vowelMix[v]);
-      }
-    }
-
-    for (const [name, entries] of this.targets) {
-      const cur = this.current.get(name) ?? 0;
-      const next = cur + ((this.target.get(name) ?? 0) - cur) * t;
-      this.current.set(name, next);
-
-      let out = next;
-      if (lip > 0) {
-        const dot = name.indexOf(".");
-        const rel = dot >= 0 ? name.slice(dot + 1) : name;
-        if (rel.startsWith("Mouth_")) {
-          const vw = this.relVowelWeight.get(rel);
-          out =
-            vw !== undefined
-              ? Math.max(next * (1 - lip), lip * LIP_VOWEL_GAIN * Math.min(1, vw))
-              : next * (1 - lip);
-        }
-      }
-      for (const entry of entries) {
-        if (entry.mesh.morphTargetInfluences) entry.mesh.morphTargetInfluences[entry.index] = out;
-      }
-    }
-  }
 }
 
 /**

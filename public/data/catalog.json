@@ -60,7 +60,7 @@
           "costumeId": "3d_costume_1001103101",
           "glbUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101_materials.json",
-          "expressionsUrl": "/assets/3d/animations/kaho_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_kaho.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103101/SCSch011Kah_Eye_highlightmain.png",
           "firstTurnIndex": 0
         },
@@ -70,7 +70,7 @@
           "costumeId": "3d_costume_1001103201",
           "glbUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201_materials.json",
-          "expressionsUrl": "/assets/3d/animations/sayaka_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_sayaka.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103201/SCSch014Say_Eye_highlightmain.png",
           "firstTurnIndex": 0
         }
@@ -128,7 +128,7 @@
           "costumeId": "3d_costume_1001102101",
           "glbUrl": "/assets/3d/costume/3d_costume_1001102101/3d_costume_1001102101.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001102101/3d_costume_1001102101_materials.json",
-          "expressionsUrl": "/assets/3d/animations/kozue_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_kozue.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001102101/SCSch012Koz_Eye_highlightmain.png",
           "firstTurnIndex": 0
         },
@@ -138,7 +138,7 @@
           "costumeId": "3d_costume_1001103101",
           "glbUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101_materials.json",
-          "expressionsUrl": "/assets/3d/animations/kaho_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_kaho.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103101/SCSch011Kah_Eye_highlightmain.png",
           "firstTurnIndex": 0
         },
@@ -148,7 +148,7 @@
           "costumeId": "3d_costume_1001103201",
           "glbUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201_materials.json",
-          "expressionsUrl": "/assets/3d/animations/sayaka_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_sayaka.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103201/SCSch014Say_Eye_highlightmain.png",
           "firstTurnIndex": 68
         },
@@ -158,7 +158,7 @@
           "costumeId": "3d_costume_1001102201",
           "glbUrl": "/assets/3d/costume/3d_costume_1001102201/3d_costume_1001102201.glb",
           "materialsUrl": "/assets/3d/costume/3d_costume_1001102201/3d_costume_1001102201_materials.json",
-          "expressionsUrl": "/assets/3d/animations/tsuzuri_expressions.json",
+          "emotionDataUrl": "/assets/3d/emotions/emotion_tuzuri.json",
           "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001102201/SCSch013Tsu_Eye_highlightmain.png",
           "firstTurnIndex": 85
         }

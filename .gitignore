@@ -18,6 +18,8 @@ data-inspect/
 # and rebuilds it automatically. The rest of data_cache/ stays tracked: those files are
 # build inputs that can't be re-fetched (e.g. model_viewer_context.json, wordfreq_ja.json).
 data_cache/jmdict/
+# Hasu-KO episode pages fetched by scripts/hasuko_series_en.py (their text is in story_index.json)
+data_cache/hasuko_en_series_*.html
 # Game texture extracted only for inspection (not a build input)
 data_cache/*.png
 

@@ -107,8 +107,8 @@ CHAR_META: dict[str, dict[str, Any]] = {
     "吟子": {"id": 1041, "en": "Ginko", "enLower": "ginko", "color": "#a2d7dd", "lightColor": "#e9f6f8"},
     "小鈴": {"id": 1042, "en": "Kosuzu", "enLower": "kosuzu", "color": "#fad764", "lightColor": "#fef6dc"},
     "姫芽": {"id": 1043, "en": "Hime", "enLower": "hime", "color": "#9d8de2", "lightColor": "#ece8fa"},
-    "セラス": {"id": 1051, "en": "Ceras", "enLower": "ceras", "color": "#f56565", "lightColor": "#fde2e2"},
-    "泉": {"id": 1052, "en": "Izumi", "enLower": "izumi", "color": "#4fd1c5", "lightColor": "#ddf7f5"},
+    "セラス": {"id": 1052, "en": "Ceras", "enLower": "ceras", "color": "#f56565", "lightColor": "#fde2e2"},
+    "泉": {"id": 1051, "en": "Izumi", "enLower": "izumi", "color": "#4fd1c5", "lightColor": "#ddf7f5"},
     "沙知": {"id": 1011, "en": "Sachi", "enLower": "sachi", "color": "#8c9eff", "lightColor": "#e8ecff"},
 }
 
@@ -216,18 +216,34 @@ def load_ep1_part1_dub_script() -> list[dict[str, str]]:
     return out
 
 
-def motion_start(script_id: str, line_num: int, n_turns: int, immediate: bool) -> dict[str, Any]:
-    """Which command started a character's current motion, carried in every snapshot.
+def motion_start(
+    script_id: str,
+    line_num: int,
+    n_turns: int,
+    immediate: bool,
+    play_type: int = 2,
+    breathing: float | None = None,
+    normalized_time: float | None = None,
+) -> dict[str, Any]:
+    """Which command started a character's current motion, and how, carried in every snapshot.
 
-    The player plays a motion's in/action clips only when the motion starts on screen. A
-    snapshot alone can't say that (the same motion can be started again, and a jump lands
-    mid-motion), so each start is identified by its script line and the turn it falls in.
-    Commands before the first message belong to turn 0.
+    The player plays a motion's opening only when the motion starts on screen. A snapshot alone
+    can't say that (the same motion can be started again, and a jump lands mid-motion), so each
+    start is identified by its script line and the turn it falls in (commands before the first
+    message belong to turn 0). How it starts comes from the command's arguments, as the game reads
+    them (CLAUDE.md, "Story motions"):
+      キャラモーション再生 <char> <mot> <playType> [breathing]
+      キャラモーション即時再生 <char> <mot> <playType> <normalizedTime>
+    playType picks the starting state (0 in, 1 loop, 2 action); breathing is the weight of the
+    additive breathing layer (the game uses 0.2 when it's omitted).
     """
     return {
         "motionCmd": f"{script_id}:{line_num}",
         "motionStartTurn": max(n_turns - 1, 0),
         "motionImmediate": immediate,
+        "motionPlayType": play_type,
+        "motionBreathing": breathing,
+        "motionNormalizedTime": normalized_time,
     }
 
 
@@ -325,16 +341,36 @@ def compile_script(
     clock_sec = 0.0
     turn_elapsed_sec = 0.0
 
+    def event_state(ev: dict[str, Any]) -> dict[str, Any]:
+        """The part of the stage an event leaves behind, so the player can apply a mid-line event
+        with the same code it uses for a line's starting snapshot. (Every handler updates `state`
+        before calling attach_event.)"""
+        t = ev["type"]
+        if t.startswith("camera_"):
+            return {"camera": copy.deepcopy(state["camera"])}
+        if t.startswith("bg_"):
+            return {"background": copy.deepcopy(state["background"])}
+        if t == "fade":
+            return {"fade": copy.deepcopy(state["fade"])}
+        if t.startswith("bgm_"):
+            return {"audio": copy.deepcopy(state["audio"])}
+        if t.startswith("prop_"):
+            return {"props": copy.deepcopy(state["props"])}
+        if t in ("char_spawn", "char_move") and ev.get("character") in state["characters"]:
+            return {"characterState": copy.deepcopy(state["characters"][ev["character"]])}
+        return {}
+
     def attach_event(ev: dict[str, Any]) -> None:
         ev["timestampSec"] = round(clock_sec, 3)
         ev["turnOffsetSec"] = round(turn_elapsed_sec, 3)
+        ev.update(event_state(ev))
         if turns:
             if turn_elapsed_sec == 0.0:
                 # Command occurs on the exact same frame (t=0) as the dialogue line: fold it
-                # into the line's starting snapshot. One-shot sounds carry no state, so they
-                # still need to be scheduled (at offset 0) or they would never play.
+                # into the line's starting snapshot. One-shot sounds and mouth flaps carry no
+                # state, so they still need to be scheduled (at offset 0) or they would never play.
                 turns[-1]["stateBefore"] = copy.deepcopy(state)
-                if ev["type"] == "se_play" and not ev.get("loop"):
+                if (ev["type"] == "se_play" and not ev.get("loop")) or ev["type"] == "char_lip":
                     turns[-1]["intraEvents"].append(ev)
             else:
                 turns[-1]["intraEvents"].append(ev)
@@ -390,7 +426,8 @@ def compile_script(
                 "costumeId": costume_id,
                 "glbUrl": asset_url(glb_rel, script_id),
                 "eyeHighlightUrl": eye_tex,
-                "expressionsUrl": asset_url(f"3d/animations/{cmeta['enLower']}_expressions.json", script_id),
+                # the character's Tecotec.EmotionData, named by the command (scripts/export_emotions.py)
+                "emotionDataUrl": asset_url(f"3d/emotions/{emotion_ctrl}.json", script_id),
                 "emotionController": emotion_ctrl,
                 "visible": True,
                 "position": pos,
@@ -400,7 +437,7 @@ def compile_script(
                 "motionId": "mot_00_00010",
                 "motionUrl": asset_url("3d/motions/mot_00_00010.glb", script_id),
                 "motionDescription": "通常立ち",
-                **motion_start(script_id, line_num, len(turns), immediate=True),
+                **motion_start(script_id, line_num, len(turns), immediate=True, play_type=1),
                 "lookAt": {"mode": "angle", "value": 0.0},
                 "blush": 0.0,
                 "tears": False,
@@ -461,7 +498,20 @@ def compile_script(
             if char_name in state["characters"]:
                 state["characters"][char_name]["emotion"] = emo_id
                 state["characters"][char_name]["emotionComment"] = comment
-            attach_event({"type": "char_emotion", "character": char_name, "emotion": emo_id, "comment": comment})
+            # optional 3rd argument: transition seconds (CharaExpressionCommand rValues[0]; 0 = instant);
+            # without it the character's EmotionData.TransitionTime applies
+            transition = float(args[2]) if len(args) >= 3 and re.fullmatch(r"\d+(\.\d+)?", args[2]) else None
+            if char_name in state["characters"]:
+                state["characters"][char_name]["emotionTransitionSec"] = transition
+            attach_event({"type": "char_emotion", "character": char_name, "emotion": emo_id, "comment": comment,
+                          "transitionSec": transition})
+            continue
+
+        # [キャラ口パク開始 <char> <sec>]: mouth flap without a voice (CharaLipCommand -> PlayABLip)
+        if cmd == "キャラ口パク開始" and len(args) >= 2:
+            dur = float(args[1]) if re.fullmatch(r"\d+(\.\d+)?", args[1]) else 0.0
+            interval = float(args[2]) if len(args) >= 3 and re.fullmatch(r"\d+(\.\d+)?", args[2]) else None
+            attach_event({"type": "char_lip", "character": args[0], "durationSec": dur, "intervalSec": interval})
             continue
 
         if cmd in ("キャラモーション再生", "キャラモーション即時再生") and len(args) >= 2:
@@ -470,7 +520,13 @@ def compile_script(
             # Check if motion GLB exists locally; if it 404'd on GCS, keep previous valid motionUrl as fallback
             local_mot = PUBLIC_ASSETS_DIR / mot_rel
             mot_desc = comment or (motions_meta_by_id.get(mot_id) or {}).get("description") or mot_id
-            start = motion_start(script_id, line_num, len(turns), immediate=cmd == "キャラモーション即時再生")
+            immediate = cmd == "キャラモーション即時再生"
+            play_type = int(args[2]) if len(args) >= 3 and re.fullmatch(r"[0-2]", args[2]) else 2
+            extra = float(args[3]) if len(args) >= 4 and re.fullmatch(r"-?\d+(\.\d+)?", args[3]) else None
+            start = motion_start(
+                script_id, line_num, len(turns), immediate=immediate, play_type=play_type,
+                breathing=None if immediate else extra, normalized_time=extra if immediate else None,
+            )
             if char_name in state["characters"]:
                 state["characters"][char_name]["motionId"] = mot_id
                 state["characters"][char_name]["motionDescription"] = mot_desc
@@ -485,15 +541,21 @@ def compile_script(
                 "description": mot_desc,
                 "immediate": start["motionImmediate"],
                 "motionCmd": start["motionCmd"],
+                "motionPlayType": start["motionPlayType"],
+                "motionBreathing": start["motionBreathing"],
+                "motionNormalizedTime": start["motionNormalizedTime"],
             })
             continue
 
-        if cmd == "顔紅潮操作" and len(args) >= 2:
+        # [顔紅潮操作 <char> [level] [fadeSec]] (FaceFlushingCommand: missing numbers read as 0)
+        if cmd == "顔紅潮操作" and len(args) >= 1:
             char_name = args[0]
-            blush = float(args[1]) if re.match(r"^-?[\d.]+$", args[1]) else 0.0
+            num = lambda i: float(args[i]) if len(args) > i and re.match(r"^-?[\d.]+$", args[i]) else 0.0
+            blush, fade = num(1), num(2)
             if char_name in state["characters"]:
                 state["characters"][char_name]["blush"] = blush
-            attach_event({"type": "char_blush", "character": char_name, "blush": blush})
+                state["characters"][char_name]["blushFadeSec"] = fade
+            attach_event({"type": "char_blush", "character": char_name, "blush": blush, "fadeSec": fade})
             continue
 
         # 2. 3D Story Props: [3Dオブジェクト表示 ppadv028_buswindow buswindow -2,-1.3,30 20,10,1 0,0,0]
@@ -900,7 +962,7 @@ def build_asset_manifest(turns: list[dict[str, Any]]) -> dict[str, Any]:
                         "costumeId": cid,
                         "glbUrl": glb_url,
                         "materialsUrl": re.sub(r"\.glb$", "_materials.json", glb_url),
-                        "expressionsUrl": c.get("expressionsUrl"),
+                        "emotionDataUrl": c.get("emotionDataUrl"),
                         "eyeHighlightUrl": c.get("eyeHighlightUrl"),
                         "firstTurnIndex": idx,
                     }
