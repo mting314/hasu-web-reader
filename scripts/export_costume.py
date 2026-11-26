@@ -105,6 +105,7 @@ def matrix(m) -> np.ndarray:
 
 class CostumeExporter:
     data_texture_hints = DATA_TEXTURE_HINTS  # texture names saved as lossless WebP
+    uv_sets = 2  # UV channels exported (TEXCOORD_0..)
 
     def __init__(self, env: UnityPy.Environment, costume_file: str, glb: Glb):
         self.env, self.glb = env, glb
@@ -264,7 +265,7 @@ class CostumeExporter:
         if h.m_Tangents:
             tan = np.array(h.m_Tangents, dtype=np.float64).reshape(nv, 4) * [-1, 1, 1, -1]
             attrs["TANGENT"] = self.glb.accessor(tan, "VEC4")
-        for i, uv in enumerate((h.m_UV0, h.m_UV1)):
+        for i, uv in enumerate((h.m_UV0, h.m_UV1, h.m_UV2)[:self.uv_sets]):
             if uv:
                 a = np.array(uv, dtype=np.float64).reshape(nv, -1)[:, :2].copy()
                 a[:, 1] = 1.0 - a[:, 1]   # Unity uv origin bottom-left -> glTF top-left

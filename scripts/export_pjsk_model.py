@@ -79,6 +79,7 @@ def trs_matrix(t, q) -> np.ndarray:
 
 class PjskModelExporter(CostumeExporter):
     data_texture_hints = ("_h", "sdf", "dither", "mask")  # _h = _ValueTex control map
+    uv_sets = 3  # Toon-v3's Outline pass reads TEXCOORD2 (the hair's second outline normal)
 
     def __init__(self, env: UnityPy.Environment, body: str, face: str, glb: Glb):
         super().__init__(env, body, glb)

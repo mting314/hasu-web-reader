@@ -23,6 +23,35 @@ const FACE = program(P.FACE_VERT, P.FACE_FRAG, P.FACE_UNIFORMS);
 const HAIR = program(P.HAIR_VERT, P.HAIR_FRAG, P.HAIR_UNIFORMS);
 const EYE = program(P.EYE_VERT, P.EYE_FRAG, P.EYE_UNIFORMS);
 const HIGHLIGHT = program(P.HIGHLIGHT_VERT, P.HIGHLIGHT_FRAG, P.HIGHLIGHT_UNIFORMS);
+const OUTLINE = program(P.OUTLINE_VERT, P.OUTLINE_FRAG, P.OUTLINE_UNIFORMS);
+
+/**
+ * The renderer's SekaiCharacterOutlineFeature settings (APK data, globalgamemanagers.assets):
+ * width 0.04–0.95, distance 0.45–20 m, and its FOV curve (two Hermite keys, weightedMode 0).
+ * SekaiCharacterOutlinePass.UpdateOutline (JP RVA 0xA80D750) turns them into the globals
+ * _SekaiOutlineWidth = (min, max) * 0.01 and _SekaiOutlineFactor = (near, 1 / (far − near), fov / curve(fov)).
+ */
+const OUTLINE_SETTINGS = { widthMin: 0.04, widthMax: 0.95, distanceNear: 0.45, distanceFar: 20 };
+const FOV_CURVE = [
+  { time: -0.013763427734375, value: 27.81246566772461, inSlope: -0.13214513659477234, outSlope: -0.13214513659477234 },
+  { time: 100.92341613769531, value: -0.03620624542236328, inSlope: -0.5713597536087036, outSlope: -0.5713597536087036 },
+];
+/** AnimationCurve.Evaluate for the two keys (Hermite; clamped outside them). */
+function fovCurve(fov: number): number {
+  const [a, b] = FOV_CURVE;
+  if (fov <= a.time) return a.value;
+  if (fov >= b.time) return b.value;
+  const dt = b.time - a.time;
+  const s = (fov - a.time) / dt;
+  const s2 = s * s;
+  const s3 = s2 * s;
+  return (
+    (2 * s3 - 3 * s2 + 1) * a.value +
+    (s3 - 2 * s2 + s) * a.outSlope * dt +
+    (-2 * s3 + 3 * s2) * b.value +
+    (s3 - s2) * b.inSlope * dt
+  );
+}
 
 /** The converted variant for a material's shader and keywords (null: not converted). */
 function programFor(unity: UnityMaterial): Program | null {
@@ -72,6 +101,13 @@ const sekaiGlobals: Record<string, THREE.IUniform> = {
   _SekaiFogFactor: { value: new THREE.Vector2(1, 0) },
   _SekaiGlobalEyeTime: { value: 0 },
   _GlobalMipBias: { value: new THREE.Vector2(0, 0) },
+  _SekaiOutlineWidth: { value: new THREE.Vector4(OUTLINE_SETTINGS.widthMin * 0.01, OUTLINE_SETTINGS.widthMax * 0.01, 0, 0) },
+  _SekaiOutlineFactor: {
+    value: new THREE.Vector4(OUTLINE_SETTINGS.distanceNear, 1 / (OUTLINE_SETTINGS.distanceFar - OUTLINE_SETTINGS.distanceNear), 1, 0),
+  },
+  // SekaiCharacterAmbientLight defaults (.ctor 0x524C4E8): outline colour black, blending 0.5
+  _SekaiCharacterOutlineColorArray: { value: fill(() => new THREE.Vector4(0, 0, 0, 1)) },
+  _SekaiCharacterOutlineBlendingArray: { value: fill(() => 0.5) },
   _CoCParams: { value: new THREE.Vector4(0, 0, 0, 0) },
   unity_OrthoParams: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
@@ -243,6 +279,40 @@ async function createMaterial(
 
 const _proj = new THREE.Vector4();
 
+function cameraUniforms(_r: unknown, _s: unknown, camera: THREE.Camera, _g: unknown, material: THREE.Material) {
+  const cam = camera as THREE.PerspectiveCamera;
+  const u = (material as THREE.ShaderMaterial).uniforms;
+  if (u._ProjectionParams) (u._ProjectionParams.value as THREE.Vector4).copy(_proj.set(1, cam.near, cam.far, 1 / cam.far));
+  // SekaiCharacterOutlinePass.UpdateOutline: factor.z = fov / curve(fov)
+  if (u._SekaiOutlineFactor && cam.isPerspectiveCamera) {
+    (u._SekaiOutlineFactor.value as THREE.Vector4).z = cam.fov / fovCurve(cam.fov);
+  }
+}
+
+/**
+ * Toon-v3's Outline pass: Cull Front, ZTest Less, ZWrite On, the material's stencil, drawn by the
+ * renderer's "Outline" SekaiDrawObjectsRendererFeature before the opaques. A twin of the mesh
+ * (same geometry, skeleton and blendshape weights) carries it.
+ */
+async function addOutline(
+  mesh: THREE.Mesh,
+  unity: UnityMaterial,
+  loadTexture: (index: number) => Promise<THREE.Texture>,
+  state: PjskShaderState
+) {
+  const m = await createMaterial(unity, OUTLINE, mesh.geometry, loadTexture, state);
+  m.side = THREE.BackSide;
+  m.depthFunc = THREE.LessDepth;
+  if (unity.keywords.includes("_OUTLINE_SECOND_NORMAL")) m.defines = { ...m.defines, PJSK_OUTLINE_SECOND_NORMAL: "" };
+  const outline = mesh.clone(false) as THREE.Mesh;
+  outline.name = `${mesh.name}__outline`;
+  outline.material = m;
+  outline.morphTargetInfluences = mesh.morphTargetInfluences;
+  outline.renderOrder = mesh.renderOrder - 0.5;
+  outline.onBeforeRender = cameraUniforms as THREE.Object3D["onBeforeRender"];
+  mesh.parent?.add(outline);
+}
+
 /** Replace a PJSK model's materials with the game's shaders (others are left as they are). */
 export async function preparePjskShaders(
   scene: THREE.Object3D,
@@ -261,11 +331,8 @@ export async function preparePjskShaders(
       if (!unity || !program) return;
       mesh.material = await createMaterial(unity, program, mesh.geometry, loadTexture, state);
       mesh.renderOrder = unity.renderQueue >= 0 ? unity.renderQueue : 2000;
-      mesh.onBeforeRender = (_r, _s, camera, _g, material) => {
-        const u = (material as THREE.ShaderMaterial).uniforms._ProjectionParams;
-        const cam = camera as THREE.PerspectiveCamera;
-        if (u) (u.value as THREE.Vector4).copy(_proj.set(1, cam.near, cam.far, 1 / cam.far));
-      };
+      mesh.onBeforeRender = cameraUniforms as THREE.Object3D["onBeforeRender"];
+      if (unity.shader === "Sekai/Live/Character/Toon-v3") await addOutline(mesh, unity, loadTexture, state);
     })
   );
 }

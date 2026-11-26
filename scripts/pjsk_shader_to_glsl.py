@@ -156,11 +156,78 @@ def adapt(src: str, kind: str) -> tuple[str, dict[str, list]]:
         prelude += "".join(f"{{ mat4 m = {mats[m]}; for (int i = 0; i < 4; i++) hlslcc_mtx4x4unity_{m}[i] = m[i]; }}\n"
                            for m in used)
     s = s.replace("void main()\n{\n", "void main()\n{\n" + prelude, 1)
+    return s, uniform_decls(s)
+
+
+def uniform_decls(s: str) -> dict[str, list]:
     uniforms = {}
     for m in re.finditer(r"^\s*(?:uniform|UNITY_UNIFORM|UNITY_LOCATION\(\d+\) uniform)\s+(?:mediump |highp |lowp )?"
                          r"(\w+)\s+(\w+)(?:\[(\d+)\])?;", s, flags=re.M):
         uniforms[m.group(2)] = [m.group(1), int(m.group(3)) if m.group(3) else None]
-    return s, uniforms
+    return uniforms
+
+
+# Toon-v3's Outline pass only ships a Vulkan program (no GLES3 variant). Lifted from its SPIR-V
+# (scripts/pjsk_spirv.py; globals named by the pass's parameter blob, UnityPerMaterial members by
+# the GLES3 declaration order): the vertex stage is the Base vertex with the position pushed out
+# along the (second) normal by a camera-distance-dependent width, and a depth offset; the fragment
+# stage is the Base lighting with the lit colour mixed toward the stage's outline colour.
+OUTLINE_VERTEX_DECLS = """\
+uniform vec4 _SekaiOutlineWidth;   // (widthMin, widthMax) * 0.01, SekaiCharacterOutlinePass.UpdateOutline
+uniform vec4 _SekaiOutlineFactor;  // (distanceNear, 1 / (distanceFar - distanceNear), fov / fovCurve(fov))
+uniform float _OutlineOffset;
+in vec4 tangent;
+in vec2 uv2;
+"""
+OUTLINE_VERTEX_PUSH = """\
+    {
+        vec3 pjskWorld = (modelMatrix * vec4(in_POSITION0.xyz, 1.0)).xyz;
+        float pjskT = clamp((length(pjskWorld - _WorldSpaceCameraPos) - _SekaiOutlineFactor.x) * _SekaiOutlineFactor.y, 0.0, 1.0);
+        pjskT = min(pjskT * _SekaiOutlineFactor.z, 1.0);
+        float pjskWidth = pjskT * (_SekaiOutlineWidth.y - _SekaiOutlineWidth.x) + _SekaiOutlineWidth.x;
+    #ifdef PJSK_OUTLINE_SECOND_NORMAL
+        // second normal in tangent space: T * uv1.x + (N x T) * T.w * uv1.y + N * uv2.x
+        vec3 pjskTangent = tangent.xyz;
+    #ifdef USE_SKINNING
+        pjskTangent = (skinMatrix * vec4(pjskTangent, 0.0)).xyz;
+    #endif
+        vec2 pjskUv1 = vec2(in_TEXCOORD1.x, 1.0 - in_TEXCOORD1.y); // the GLB stores v flipped
+        vec3 pjskDir = pjskTangent * pjskUv1.x + cross(in_NORMAL0, pjskTangent) * tangent.w * pjskUv1.y + in_NORMAL0 * uv2.x;
+        pjskDir *= inversesqrt(dot(pjskDir, pjskDir));
+    #else
+        vec3 pjskDir = in_NORMAL0 * inversesqrt(dot(in_NORMAL0, in_NORMAL0));
+    #endif
+        in_POSITION0.xyz += pjskDir * pjskWidth * in_COLOR0.x;
+    }
+"""
+OUTLINE_FRAGMENT_DECLS = """\
+uniform vec4 _SekaiCharacterOutlineColorArray[12];
+uniform float _SekaiCharacterOutlineBlendingArray[12];
+"""
+OUTLINE_FRAGMENT_MIX = """\
+    // outline = mix(outlineColor.rgb * outlineColor.a, lit, blending) (SekaiCharacterAmbientLight)
+    u_xlat1.xyz = mix(_SekaiCharacterOutlineColorArray[u_xlati2].xyz * _SekaiCharacterOutlineColorArray[u_xlati2].w,
+                      u_xlat1.xyz, _SekaiCharacterOutlineBlendingArray[u_xlati2]);
+"""
+
+
+def _inject(src: str, anchor: str, text: str, before: bool = True) -> str:
+    if src.count(anchor) != 1:
+        raise SystemExit(f"outline: anchor not found exactly once: {anchor.strip()!r}")
+    return src.replace(anchor, text + anchor if before else anchor + text)
+
+
+def outline_program(vert: str, frag: str) -> tuple[str, str]:
+    vert = _inject(vert, "void main()\n", OUTLINE_VERTEX_DECLS)
+    vert = _inject(vert, "    u_xlat0.xyz = in_POSITION0.yyy * hlslcc_mtx4x4unity_ObjectToWorld[1].xyz;\n", OUTLINE_VERTEX_PUSH)
+    # clip += clip(cameraPos) * (-0.01 * _OutlineOffset * color.b)
+    vert = _inject(vert, "    gl_Position = u_xlat1;\n",
+                   "    u_xlat1 += (hlslcc_mtx4x4unity_MatrixVP[0] * _WorldSpaceCameraPos.x + hlslcc_mtx4x4unity_MatrixVP[1]"
+                   " * _WorldSpaceCameraPos.y + hlslcc_mtx4x4unity_MatrixVP[2] * _WorldSpaceCameraPos.z"
+                   " + hlslcc_mtx4x4unity_MatrixVP[3]) * (_OutlineOffset * -0.01) * in_COLOR0.z;\n")
+    frag = _inject(frag, "void main()\n", OUTLINE_FRAGMENT_DECLS)
+    frag = _inject(frag, "    u_xlat2.xyz = u_xlat11.xyz * _SekaiRimLightFactor[u_xlati2].yyy;\n", OUTLINE_FRAGMENT_MIX)
+    return vert, frag
 
 
 def main() -> None:
@@ -180,19 +247,24 @@ def main() -> None:
         "// (GLSL ES 3.0 in the Android shader/live bundle). Do not edit; regenerate instead.",
         "",
     ]
+    programs: dict[str, tuple[str, str, str]] = {}
     for key, (shader, pass_name, keywords) in VARIANTS.items():
         tt = shaders[shader]
         text = find_variant(tt["m_ParsedForm"], ShaderBlob(tt), pass_name, keywords)
-        vert, vu = adapt(stage(text, "VERTEX"), "vertex")
-        frag, fu = adapt(stage(text, "FRAGMENT"), "fragment")
-        uniforms = {**vu, **fu}
-        lines.append(f"/** {shader}, pass {pass_name}, keywords {sorted(keywords) or 'none'} */")
+        vert, _ = adapt(stage(text, "VERTEX"), "vertex")
+        frag, _ = adapt(stage(text, "FRAGMENT"), "fragment")
+        programs[key] = (f"{shader}, pass {pass_name}, keywords {sorted(keywords) or 'none'}", vert, frag)
+    programs["OUTLINE"] = ("Hidden/Sekai/Live/Character/Toon-v3, pass Outline (lifted from SPIR-V onto the "
+                           "Base _LAMBERT program)", *outline_program(*programs["TOON"][1:]))
+    for key, (title, vert, frag) in programs.items():
+        uniforms = {**uniform_decls(vert), **uniform_decls(frag)}
+        lines.append(f"/** {title} */")
         lines.append(f"export const {key}_VERT = {json.dumps(vert)};")
         lines.append(f"export const {key}_FRAG = {json.dumps(frag)};")
         lines.append(f"export const {key}_UNIFORMS = {json.dumps(dict(sorted(uniforms.items())))} "
                      "as Record<string, [string, number | null]>;")
         lines.append("")
-        print(f"{key}: {shader} {pass_name} {sorted(keywords)}: {len(uniforms)} uniforms")
+        print(f"{key}: {title}: {len(uniforms)} uniforms")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines), encoding="utf-8")
