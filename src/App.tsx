@@ -468,6 +468,7 @@ export default function App() {
   // Keyboard navigation (Right/Space = two-stage advance, Left = Prev)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (sidebarOpen || creditsOpen) return; // an overlay (story selector, credits) has the keys
       if (
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "SELECT"
@@ -484,7 +485,19 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleStageOrKeyAdvance, handlePrev]);
+  }, [handleStageOrKeyAdvance, handlePrev, sidebarOpen, creditsOpen]);
+
+  // The story selector covers the reader: auto mode pauses while it's open and resumes after.
+  const pausedBySelectorRef = useRef(false);
+  useEffect(() => {
+    if (sidebarOpen && autoPlayRef.current) {
+      pausedBySelectorRef.current = true;
+      setAutoPlay(false);
+    } else if (!sidebarOpen && pausedBySelectorRef.current) {
+      pausedBySelectorRef.current = false;
+      setAutoPlay(true);
+    }
+  }, [sidebarOpen]);
 
   const toggleFullscreen = () => {
     if (!stageContainerRef.current) return;
@@ -928,7 +941,7 @@ export default function App() {
               href="https://introtohasu.carrd.co/#watchorder"
               target="_blank"
               rel="noreferrer"
-              className="hidden sm:inline-flex items-center gap-1 text-xs text-sky-400 hover:underline"
+              className="inline-flex items-center gap-1 text-xs text-sky-400 hover:underline"
             >
               IntroToHasu Watch Order <ExternalLink className="w-3 h-3" />
             </a>

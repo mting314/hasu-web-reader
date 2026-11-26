@@ -92,7 +92,15 @@ export const StorySelector: React.FC<StorySelectorProps> = ({
   const cardRefs = useRef(new Map<number, HTMLButtonElement>());
 
   useEffect(() => {
-    if (open && !index) loadStoryIndex().then(setIndex, (e) => setError(String(e)));
+    if (!open || index) return;
+    setError(null); // a retry (reopening after a failed load) starts clean
+    loadStoryIndex().then(
+      (d) => {
+        setIndex(d);
+        setError(null);
+      },
+      (e) => setError(String(e))
+    );
   }, [open, index]);
 
   const currentSeries = useMemo(
@@ -125,23 +133,42 @@ export const StorySelector: React.FC<StorySelectorProps> = ({
     }
   }, [open, selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Focus moves into the dialog while it's open (and back to the opener afterwards); focus that
+  // wanders outside (Tab past the end) is pulled back, so hidden reader controls can't be pressed.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    const keepInside = (e: FocusEvent) => {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) dialogRef.current.focus();
+    };
+    document.addEventListener("focusin", keepInside);
+    return () => {
+      document.removeEventListener("focusin", keepInside);
+      opener?.focus?.();
+    };
+  }, [open]);
+
   // Esc closes; ←/→ move between series. Handled in the capture phase so the reader behind the
   // overlay doesn't also advance its lines.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const i = shown.findIndex((s) => s.id === selected?.id);
         const next = shown[i + (e.key === "ArrowRight" ? 1 : -1)];
         if (next) setSeriesId(next.id);
       } else if (e.key === " ") {
-        // keep Space for pressing a focused button; just don't let the reader advance a line
+        // keep Space for pressing a focused button in the dialog; never let the reader advance a line
         e.stopImmediatePropagation();
-        if (t && /^(BUTTON|A)$/.test(t.tagName)) return;
+        if (t && dialogRef.current?.contains(t) && /^(BUTTON|A)$/.test(t.tagName)) return;
       } else {
         return;
       }
@@ -150,7 +177,7 @@ export const StorySelector: React.FC<StorySelectorProps> = ({
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [open, shown, selected, onClose]);
+  }, [open, shown, selected]);
 
   if (!open) return null;
 
@@ -161,10 +188,15 @@ export const StorySelector: React.FC<StorySelectorProps> = ({
     setSeriesId(index?.series.find((s) => s.segment === 0 && s.fiscalYear === fy)?.id ?? null);
   };
   const totalParts = index?.series.reduce((n, s) => n + s.parts.length, 0) ?? 0;
+  // English title: Hasu-KO's (in the index), else the catalog's for a readable part
+  const selectedTitleEn =
+    selected?.titleEn ?? selected?.parts.map((p) => byScript.get(p.scriptId)?.seriesTitleEn).find(Boolean) ?? null;
   const readableParts = index?.series.reduce((n, s) => n + readableCount(s, readable), 0) ?? 0;
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label="Activity records"
@@ -368,7 +400,7 @@ export const StorySelector: React.FC<StorySelectorProps> = ({
                 </div>
                 <h3 className="mt-0.5 text-lg font-bold text-white">
                   {selected.title}
-                  {selected.titleEn && <span className="ml-2 text-sm font-semibold text-slate-300">{selected.titleEn}</span>}
+                  {selectedTitleEn && <span className="ml-2 text-sm font-semibold text-slate-300">{selectedTitleEn}</span>}
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-slate-300">{selected.description}</p>
                 {selected.descriptionEn && (
