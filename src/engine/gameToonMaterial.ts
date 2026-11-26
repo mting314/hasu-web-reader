@@ -6,8 +6,19 @@ import {
   FORWARD_VERT,
   OUTLINE_FRAG,
   OUTLINE_VERT,
+  HLSL_FORWARD_FRAG,
+  HLSL_FORWARD_FRAG_SAMPLERS,
+  HLSL_FORWARD_VERT,
+  HLSL_OUTLINE_FRAG,
+  HLSL_OUTLINE_FRAG_SAMPLERS,
+  HLSL_OUTLINE_VERT,
+  HLSL_OUTLINE_VERT_SAMPLERS,
+  UBER_EYE_FRAG,
+  UBER_EYE_VERT,
   UBER_DEFAULTS,
   EYE_DEFAULTS,
+  HLSL_DEFAULTS,
+  UBER_EYE_DEFAULTS,
   UBER_UNIFORMS,
 } from "./shaders/uberToonGame";
 
@@ -38,6 +49,9 @@ export interface UnityMaterial {
 
 export const UBER_TOON_SHADER = "MELPOT/Toon/UberToonShader";
 export const CHARACTER_EYE_SHADER = "Character/ToonShader_CharacterEye";
+/** Older versions of the two, on some NPC costumes (Sachi's face and eyes). */
+export const UBER_TOON_HLSL_SHADER = "MELPOT/Toon/UberToonShader(HLSLMacros)";
+export const UBER_EYE_SHADER = "MELPOT/Toon/UberToonShader_Eye";
 
 /** The shader's SubShader queue tag ("Geometry"), used when a material keeps the default (-1). */
 const SHADER_QUEUE = 2000;
@@ -129,7 +143,14 @@ export const toonGlobals: Record<string, THREE.IUniform> = {
   unity_LightIndices: { value: [new THREE.Vector4(), new THREE.Vector4()] },
   unity_OrthoParams: { value: new THREE.Vector4(0, 0, 0, 0) },
   unity_WorldTransformParams: { value: new THREE.Vector4(0, 0, 0, 1) },
+  // URP's (t, sin t, cos t, 0); UberToonShader_Eye animates its highlight with it
+  _TimeParameters: { value: new THREE.Vector4(0, 0, 1, 0) },
 };
+
+/** Advance the shaders' clock (seconds; the stage clock, so it stops while the stage is paused). */
+export function setToonTime(t: number) {
+  (toonGlobals._TimeParameters.value as THREE.Vector4).set(t, Math.sin(t), Math.cos(t), 0);
+}
 
 /** Unity world-space vector -> the reader's world (z flipped, like every story coordinate). */
 export function unityWorldToThree(v: [number, number, number]): THREE.Vector3 {
@@ -226,10 +247,81 @@ function uniformsFor(
 function namesOf(src: string): string[] {
   return Object.keys(UBER_UNIFORMS).filter((n) => new RegExp(`\\b${n}\\b`).test(src));
 }
-// the uniforms each pass reads, worked out once (the program sources are constants)
-const FORWARD_UNIFORMS = [...new Set([...namesOf(FORWARD_VERT), ...namesOf(FORWARD_FRAG)])];
-const OUTLINE_UNIFORMS = [...new Set([...namesOf(OUTLINE_VERT), ...namesOf(OUTLINE_FRAG)])];
-const EYE_UNIFORMS = [...new Set([...namesOf(EYE_VERT), ...namesOf(EYE_FRAG)])];
+type Defaults = Record<string, number | number[] | string>;
+/** Inline sampler states from the programs: texture uniform -> Metal filter / mip_filter / address. */
+type SamplerStates = Record<string, Record<string, string>>;
+
+/** One pass's converted program and the uniforms it reads (worked out once: the sources are constants). */
+interface PassProgram {
+  vert: string;
+  frag: string;
+  uniforms: string[];
+  samplers: SamplerStates;
+}
+function passProgram(vert: string, frag: string, ...samplers: SamplerStates[]): PassProgram {
+  return {
+    vert,
+    frag,
+    uniforms: [...new Set([...namesOf(vert), ...namesOf(frag)])],
+    samplers: Object.assign({}, ...samplers),
+  };
+}
+
+const WRAP: Record<string, THREE.Wrapping> = {
+  repeat: THREE.RepeatWrapping,
+  clamp_to_edge: THREE.ClampToEdgeWrapping,
+  mirrored_repeat: THREE.MirroredRepeatWrapping,
+};
+
+/**
+ * A pass that samples through an inline sampler (`sampler_Linear_Repeat`) ignores the texture's
+ * own filtering and wrapping. Give it a copy of the texture with that state, so a texture other
+ * materials share keeps its own.
+ */
+function withSamplerStates(textures: Map<string, THREE.Texture>, states: SamplerStates): Map<string, THREE.Texture> {
+  const out = new Map(textures);
+  for (const [slot, s] of Object.entries(states)) {
+    const tex = textures.get(slot);
+    if (!tex) continue;
+    const copy = tex.clone();
+    copy.wrapS = copy.wrapT = WRAP[s.address] ?? tex.wrapS;
+    const linear = s.filter !== "nearest";
+    copy.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
+    copy.minFilter =
+      s.mip_filter === "nearest"
+        ? linear ? THREE.LinearMipmapNearestFilter : THREE.NearestMipmapNearestFilter
+        : s.mip_filter === "linear"
+          ? linear ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapLinearFilter
+          : linear ? THREE.LinearFilter : THREE.NearestFilter;
+    copy.needsUpdate = true;
+    out.set(slot, copy);
+  }
+  return out;
+}
+
+/**
+ * The two-pass toon shaders by Unity name. Both versions bind the same render state to the same
+ * material properties (checked in the shader bundles' serialized passes); they differ in their
+ * programs and property defaults.
+ */
+const TOON_PROGRAMS: Record<string, { forward: PassProgram; outline: PassProgram; defaults: Defaults }> = {
+  [UBER_TOON_SHADER]: {
+    forward: passProgram(FORWARD_VERT, FORWARD_FRAG),
+    outline: passProgram(OUTLINE_VERT, OUTLINE_FRAG),
+    defaults: UBER_DEFAULTS,
+  },
+  [UBER_TOON_HLSL_SHADER]: {
+    forward: passProgram(HLSL_FORWARD_VERT, HLSL_FORWARD_FRAG, HLSL_FORWARD_FRAG_SAMPLERS),
+    outline: passProgram(HLSL_OUTLINE_VERT, HLSL_OUTLINE_FRAG, HLSL_OUTLINE_VERT_SAMPLERS, HLSL_OUTLINE_FRAG_SAMPLERS),
+    defaults: HLSL_DEFAULTS,
+  },
+};
+
+/** The single-pass eye shaders by Unity name (same render-state bindings, as above). */
+const EYE_PROGRAMS: Record<string, { forward: PassProgram; defaults: Defaults }> = {
+  [CHARACTER_EYE_SHADER]: { forward: passProgram(EYE_VERT, EYE_FRAG), defaults: EYE_DEFAULTS },
+  [UBER_EYE_SHADER]: { forward: passProgram(UBER_EYE_VERT, UBER_EYE_FRAG), defaults: UBER_EYE_DEFAULTS },
+};
 
 function applyStencil(
   m: THREE.Material,
@@ -254,7 +346,7 @@ export interface GameToonPasses {
   queue: number;
 }
 
-/** Build both passes of a UberToonShader material. */
+/** Build both passes of a UberToonShader (or its HLSLMacros version) material. */
 export async function createGameToonPasses(
   name: string,
   unity: UnityMaterial,
@@ -271,16 +363,23 @@ export async function createGameToonPasses(
       textures.set(slot, tex);
     })
   );
+  const programs = TOON_PROGRAMS[unity.shader ?? ""] ?? TOON_PROGRAMS[UBER_TOON_SHADER];
+  const defaults = programs.defaults;
   const f = unity.floats;
-  const num = (k: string) => f[k] ?? (UBER_DEFAULTS[k] as number | undefined) ?? 0;
+  const num = (k: string) => f[k] ?? (defaults[k] as number | undefined) ?? 0;
 
   // ForwardLit: Cull [_CullMode], ZWrite [_ZWriteMode], ZTest [_ZTestMode],
   // Offset [_ZFactor], [_ZUnits], stencil from the material, blend fixed at One Zero.
   const forward = new THREE.ShaderMaterial({
     name: `${name} (ForwardLit)`,
-    vertexShader: FORWARD_VERT,
-    fragmentShader: FORWARD_FRAG,
-    uniforms: uniformsFor(FORWARD_UNIFORMS, unity, textures),
+    vertexShader: programs.forward.vert,
+    fragmentShader: programs.forward.frag,
+    uniforms: uniformsFor(
+      programs.forward.uniforms,
+      unity,
+      withSamplerStates(textures, programs.forward.samplers),
+      defaults
+    ),
     side: CULL[num("_CullMode")] ?? THREE.FrontSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
@@ -289,7 +388,7 @@ export async function createGameToonPasses(
     polygonOffsetFactor: num("_ZFactor"),
     polygonOffsetUnits: num("_ZUnits"),
   });
-  applyStencil(forward, f);
+  applyStencil(forward, f, defaults);
 
   // Outline: Cull [_OutlineCullMode], ZWrite [_ZWriteMode], ZTest [_ZTestMode], stencil and
   // blend from the material.
@@ -300,9 +399,14 @@ export async function createGameToonPasses(
   const opaque = src === THREE.OneFactor && dst === THREE.ZeroFactor;
   const outline = new THREE.ShaderMaterial({
     name: `${name} (Outline)`,
-    vertexShader: OUTLINE_VERT,
-    fragmentShader: OUTLINE_FRAG,
-    uniforms: uniformsFor(OUTLINE_UNIFORMS, unity, textures),
+    vertexShader: programs.outline.vert,
+    fragmentShader: programs.outline.frag,
+    uniforms: uniformsFor(
+      programs.outline.uniforms,
+      unity,
+      withSamplerStates(textures, programs.outline.samplers),
+      defaults
+    ),
     side: CULL[num("_OutlineCullMode")] ?? THREE.BackSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
@@ -312,14 +416,14 @@ export async function createGameToonPasses(
     blendSrcAlpha: srcA,
     blendDstAlpha: dstA,
   });
-  applyStencil(outline, f);
+  applyStencil(outline, f, defaults);
   forward.userData.unity = unity;
   outline.userData.unity = unity;
 
   return { forward, outline, queue: unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE };
 }
 
-/** Build the UniversalForward pass of a Character/ToonShader_CharacterEye material. */
+/** Build the UniversalForward pass of a Character/ToonShader_CharacterEye (or UberToonShader_Eye) material. */
 export async function createGameEyeMaterial(
   name: string,
   unity: UnityMaterial,
@@ -336,8 +440,10 @@ export async function createGameEyeMaterial(
       textures.set(slot, tex);
     })
   );
+  const programs = EYE_PROGRAMS[unity.shader ?? ""] ?? EYE_PROGRAMS[CHARACTER_EYE_SHADER];
+  const defaults = programs.defaults;
   const f = unity.floats;
-  const num = (k: string) => f[k] ?? (EYE_DEFAULTS[k] as number | undefined) ?? 0;
+  const num = (k: string) => f[k] ?? (defaults[k] as number | undefined) ?? 0;
   const src = BLEND_FACTOR[num("_BlendRGBSrc")] ?? THREE.OneFactor;
   const dst = (BLEND_FACTOR[num("_BlendRGBDst")] ?? THREE.ZeroFactor) as THREE.BlendingDstFactor;
   const srcA = BLEND_FACTOR[num("_BlendAlphaSrc")] ?? THREE.OneFactor;
@@ -346,9 +452,9 @@ export async function createGameEyeMaterial(
 
   const material = new THREE.ShaderMaterial({
     name: `${name} (CharacterEye)`,
-    vertexShader: EYE_VERT,
-    fragmentShader: EYE_FRAG,
-    uniforms: uniformsFor(EYE_UNIFORMS, unity, textures, EYE_DEFAULTS),
+    vertexShader: programs.forward.vert,
+    fragmentShader: programs.forward.frag,
+    uniforms: uniformsFor(programs.forward.uniforms, unity, textures, defaults),
     side: CULL[num("_CullMode")] ?? THREE.FrontSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
@@ -361,7 +467,7 @@ export async function createGameEyeMaterial(
     polygonOffsetFactor: num("_ZFactor"),
     polygonOffsetUnits: num("_ZUnits"),
   });
-  applyStencil(material, f, EYE_DEFAULTS);
+  applyStencil(material, f, defaults);
   material.userData.unity = unity;
   return { material, queue: unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE };
 }
@@ -405,13 +511,13 @@ export async function prepareGameCostume(
       const rootBoneName = mesh.userData.rootBone ?? mesh.parent?.userData.rootBone;
       const rootBone = rootBoneName ? root.getObjectByName(rootBoneName) ?? null : null;
       const queue = unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE;
-      if (unity.shader === UBER_TOON_SHADER) {
+      if (unity.shader && unity.shader in TOON_PROGRAMS) {
         applyGameToonPasses(mesh, await createGameToonPasses(mat.name, unity, loadTexture), rootBone);
       } else if (unity.shader === "Character/ToonShader_CharacterHighlight" && mat.map) {
         mesh.material = eyeHighlightMaterial(mat.map, unity);
         applyStencil(mesh.material, unity.floats);
         mesh.renderOrder = queue;
-      } else if (unity.shader === CHARACTER_EYE_SHADER) {
+      } else if (unity.shader && unity.shader in EYE_PROGRAMS) {
         const eye = await createGameEyeMaterial(mat.name, unity, loadTexture);
         mesh.material = eye.material;
         mesh.renderOrder = eye.queue;

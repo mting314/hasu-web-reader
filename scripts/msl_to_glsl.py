@@ -21,7 +21,9 @@ to one entry (the loop over them runs zero times, _AdditionalLightsCount = 0).
 
 Input: the programs extracted from __ubertoonshader.shader. Every compiled variant in the bundle
 has _ALPHATEST_ON; the _USEENVIRONMENTMAPTEX_ON variants (vertex 2/7, fragment 5/15) are
-byte-identical to the ones below, so these four programs cover every UberToon material.
+byte-identical to the ones below, so these four programs cover every UberToon material. The eye
+shader and the two older shaders a few NPC costumes use (see PROGRAMS) are extracted the same
+way, with the decompiled ShaderLab text of each shader beside the variants dir.
 Output: src/engine/shaders/uberToonGame.ts, complete vertex/fragment sources per pass plus the
 uniforms each one reads.
 
@@ -44,6 +46,24 @@ PROGRAMS = {
     "OUTLINE_FRAG": ("uber_pass0_Outline_progFragment_4.metal", "fragment"),
     "EYE_VERT": ("eye_pass0_Forward_progVertex_0.metal", "vertex"),
     "EYE_FRAG": ("eye_pass0_Forward_progFragment_1.metal", "fragment"),
+    # The older shaders some NPC costumes use (Sachi's face and eyes): MELPOT/Toon/
+    # UberToonShader(HLSLMacros) has UberToonShader's passes and variant layout (Outline 1/4,
+    # ForwardLit 6/14, the _USEENVIRONMENTMAPTEX_ON ones byte-identical) but its own property set
+    # (a tertiary colour layer, no wetness/UV maps); MELPOT/Toon/UberToonShader_Eye has one
+    # Forward variant (_HIGHLIGHTBLENDMODE_ADDITIVE), used for every material of that shader.
+    "HLSL_FORWARD_VERT": ("hlsl_pass1_ForwardLit_progVertex_6.metal", "vertex"),
+    "HLSL_FORWARD_FRAG": ("hlsl_pass1_ForwardLit_progFragment_14.metal", "fragment"),
+    "HLSL_OUTLINE_VERT": ("hlsl_pass0_Outline_progVertex_1.metal", "vertex"),
+    "HLSL_OUTLINE_FRAG": ("hlsl_pass0_Outline_progFragment_4.metal", "fragment"),
+    "UBER_EYE_VERT": ("ueye_pass0_Forward_progVertex_1.metal", "vertex"),
+    "UBER_EYE_FRAG": ("ueye_pass0_Forward_progFragment_3.metal", "fragment"),
+}
+# shader -> its decompiled ShaderLab text beside the variants dir (for the property defaults)
+SHADER_TEXTS = {
+    "UBER_DEFAULTS": "MELPOT__Toon__UberToonShader.shader.txt",
+    "EYE_DEFAULTS": "Character__ToonShader_CharacterEye.shader.txt",
+    "HLSL_DEFAULTS": "MELPOT__Toon__UberToonShader(HLSLMacros).shader.txt",
+    "UBER_EYE_DEFAULTS": "MELPOT__Toon__UberToonShader_Eye.shader.txt",
 }
 
 TYPE_MAP = {
@@ -160,8 +180,24 @@ def vector_compares(s: str) -> str:
     return re.sub(r"^(\s*u_xlatb\d+)\.([xyzw]+)\s*=\s*\((.*)\);\s*$", fix, s, flags=re.M)
 
 
+INLINE_SAMPLER = re.compile(r"^\s*constexpr sampler (\w+)\(([^)]*)\);\s*$\n?", re.M)
+
+
+def inline_samplers(body: str) -> dict[str, dict[str, str]]:
+    """Unity inline sampler states (`sampler_Linear_Repeat`), which HLSLcc declares in the body as
+    `constexpr sampler name(filter::linear, mip_filter::nearest, address::repeat)`. They override
+    the texture's own filtering and wrapping; GLSL has no inline samplers, so the state goes to the
+    material instead: texture uniform -> {filter, mip_filter, address}."""
+    states = {name: dict(a.strip().split("::") for a in args.split(",")) for name, args in INLINE_SAMPLER.findall(body)}
+    out = {}
+    for name, state in states.items():
+        for tex in re.findall(rf"(\w+)\.sample\(\s*{name}\s*,", body):
+            out[tex] = state
+    return out
+
+
 def convert_body(body: str, stage: str) -> str:
-    s = body
+    s = INLINE_SAMPLER.sub("", body)
     for mt, gt in sorted(TYPE_MAP.items(), key=lambda kv: -len(kv[0])):
         s = re.sub(rf"\b{mt}\b", gt, s)
     # half / float literal suffixes: 0.0h, 1.0f
@@ -244,8 +280,10 @@ def textures_of(src: str) -> list[str]:
     return re.findall(r"texture2d<[^>]*>\s+(\w+)\s*\[\[", src)
 
 
-def convert(src: str, stage: str) -> tuple[str, dict[str, tuple[str, int | None]]]:
-    body = convert_body(program_body(src), stage)
+def convert(src: str, stage: str) -> tuple[str, dict[str, tuple[str, int | None]], dict[str, dict[str, str]]]:
+    raw = program_body(src)
+    samplers = inline_samplers(raw)
+    body = convert_body(raw, stage)
     uniforms: dict[str, tuple[str, int | None]] = {}
     decls = []
     for sname, fields in parse_structs(src).items():
@@ -271,7 +309,7 @@ def convert(src: str, stage: str) -> tuple[str, dict[str, tuple[str, int | None]
     else:
         varyings = [f"varying {t} v_{n};" for t, n in io_fields(src, "Mtl_FragmentIn")]
         glsl = "\n".join([FRAGMENT_PRELUDE, *constant_arrays(src), *decls, *varyings, "void main() {", body.rstrip(), "}", ""])
-    return glsl, uniforms
+    return glsl, uniforms, samplers
 
 
 def property_defaults(shader_text: str) -> dict[str, float | list[float] | str]:
@@ -298,28 +336,37 @@ def main() -> None:
     ap.add_argument("--out", default=str(ROOT / "src" / "engine" / "shaders" / "uberToonGame.ts"))
     args = ap.parse_args()
     vdir = Path(args.variants)
-    shader_text = Path(args.shader_text or vdir.parent / "MELPOT__Toon__UberToonShader.shader.txt").read_text()
-    eye_shader_path = vdir.parent / "Character__ToonShader_CharacterEye.shader.txt"
-    eye_shader_text = eye_shader_path.read_text() if eye_shader_path.exists() else ""
+    texts = {}
+    for name, fname in SHADER_TEXTS.items():
+        path = Path(args.shader_text) if name == "UBER_DEFAULTS" and args.shader_text else vdir.parent / fname
+        texts[name] = path.read_text() if path.exists() else ""
 
     lines = [
-        "// GENERATED by scripts/msl_to_glsl.py from the game's MELPOT/Toon/UberToonShader",
-        "// and Character/ToonShader_CharacterEye (Metal source in the shader bundles).",
+        "// GENERATED by scripts/msl_to_glsl.py from the game's MELPOT/Toon/UberToonShader,",
+        "// Character/ToonShader_CharacterEye, MELPOT/Toon/UberToonShader(HLSLMacros) and",
+        "// MELPOT/Toon/UberToonShader_Eye (Metal source in the shader bundles).",
         "// Do not edit; regenerate instead.",
         "",
     ]
     all_uniforms: dict[str, tuple[str, int | None]] = {}
     for key, (fname, stage) in PROGRAMS.items():
-        glsl, uniforms = convert((vdir / fname).read_text(), stage)
+        glsl, uniforms, samplers = convert((vdir / fname).read_text(), stage)
+        for name, decl in uniforms.items():
+            # one type table serves every program, so a property must mean the same everywhere
+            if all_uniforms.get(name, decl) != decl:
+                raise ValueError(f"{key}: {name} is {decl}, elsewhere {all_uniforms[name]}")
         all_uniforms.update(uniforms)
         lines.append(f"export const {key} = {json.dumps(glsl)};")
         lines.append(f"export const {key}_UNIFORMS = {json.dumps(sorted(uniforms))};")
+        if samplers:
+            lines.append(f"/** Inline sampler states: texture -> filter / mip_filter / address (Metal names). */")
+            lines.append(f"export const {key}_SAMPLERS = {json.dumps(samplers, sort_keys=True)} as Record<string, Record<string, string>>;")
         lines.append("")
     types = {k: list(v) for k, v in sorted(all_uniforms.items())}
     lines.append(f"/** Every uniform the programs read: name -> [GLSL type, array length or null]. */")
     lines.append(f"export const UBER_UNIFORMS = {json.dumps(types)} as Record<string, [string, number | null]>;")
-    # Each shader keeps its own defaults: the two define some of the same properties differently.
-    for name, text in (("UBER_DEFAULTS", shader_text), ("EYE_DEFAULTS", eye_shader_text)):
+    # Each shader keeps its own defaults: they define some of the same properties differently.
+    for name, text in texts.items():
         defaults = {k: v for k, v in property_defaults(text).items() if k in all_uniforms} if text else {}
         lines.append("")
         lines.append("/** The shader's property defaults (numbers, [r, g, b, a], or Unity's default texture name). */")
