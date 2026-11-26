@@ -435,6 +435,38 @@ Unity's own humanoid look-at, ported in `src/engine/storyLookAt.ts`:
   i.e. the same muscle space our `HumanoidBaker` solves. Sub-bones are written straight to the
   `SubBoneReference.moveSubBones` / `rotateSubBones` transforms.
 
+## Project Sekai cast swap (`src/engine/castSwap/`)
+
+A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored in localStorage by
+`src/castSwapStore.ts`) puts a PJSK 3D model in place of a Hasu character.
+
+- **Data**: `scripts/pjsk_fetch.py` (uv group `pjsk`) pulls raw bundles from PJSK's **EN official
+  CDN** (handshake + app/asset version from Sekai-World's `sekai-master-db-en-diff/versions.json`;
+  no account). The CDN's bundle index needs a logged-in session, so bundle names come from the
+  storage.sekai.best mirror listing (`ls`, JP bucket) and dependencies from each bundle's
+  `AssetBundle`. Bundles are stored de-obfuscated in `data-inspect/pjsk/bundles/` and need
+  `UnityPy.config.FALLBACK_UNITY_VERSION = "2022.3.52f1"`. Layout: body
+  `live_pv/model/characterv2/body/<cc>/<nnnn>/<figure>` (prefab `body`, figure =
+  `gameCharacters.figure` + `breastSize`, e.g. `ladies_m`), head `…/face/<cc>/<nnnn>` (prefab
+  `face`), expression presets `virtual_live/performer/facial/<cc>_<name>_NN` (one blendshape clip
+  each; bindings are the Mesh channels' `nameHash`).
+- **Export**: `scripts/export_pjsk_model.py` (reuses `export_costume.py`'s exporter) merges body and
+  head into `pjsk/3d/model/<id>/<id>.glb` and lists it in `pjsk/models.json`. The head rig repeats
+  the body's spine with zero offsets, so head meshes are bound to the body's bones by name and
+  rebound with the gap between the two Head bones. Models keep PJSK's native size (~0.98 m).
+- **PJSK Avatars are Generic** (no humanoid muscle data), so Hasu's muscle clips can't be solved on
+  them. Instead, following Cleista's uma.cleista.cc (`js/mv/uma-retarget.js`), the Hasu character
+  stays loaded with its meshes hidden and keeps running motion, look-at and expressions; each frame
+  `pjskRetarget.ts` copies its bone rotations onto the PJSK rig through a per-bone rest correction,
+  and `pjskFace.ts` maps its blendshape weights onto PJSK's `BS_*` shapes. **This hand-rolled
+  transfer is allowed for this feature only**; don't reuse it elsewhere (CLAUDE.md's ground rules
+  still apply).
+- Default size: the replaced character's rest hip height (feet and seats line up; PJSK torsos are
+  shorter, so heads sit lower). "Use Project Sekai heights" scales to `gameCharacters.height`.
+- Not done yet: PJSK's shaders (`Sekai/Live/Character/Toon-v3`, `Eye-Base`, `Eye-Highlight`; the
+  model renders unlit), spring bones (UTJ `SpringManager`), eye look-at (PJSK eyes move by
+  `BS_look.*` blendshapes, not bones), helper bones (`*ArmRoll`, `*EllbowSupport`).
+
 ## Inspecting the reference reader (Cleista, `pjsk.cleista.cc`)
 
 Cleista (`https://pjsk.cleista.cc`) is the reference web story reader for UI/UX behaviour (stage

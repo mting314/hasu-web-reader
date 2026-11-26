@@ -34,6 +34,7 @@ import {
 import { JapaneseLookupText } from "./components/JapaneseLookupText";
 import { CreditsPanel } from "./components/CreditsPanel";
 import { StorySelector } from "./components/StorySelector";
+import { CastPanel } from "./components/CastPanel";
 import { episodePartLabel, scriptIdFromSlug, slugForScriptId } from "./storySlug";
 import { rewriteAssetUrls } from "./remoteAssets";
 
@@ -1907,6 +1908,8 @@ export default function App() {
                     </select>
                   </div>
                 </div>
+
+                <CastPanel scenario={scenario} />
 
                 {/* Row 3: Pause when tab hidden, Remove rounded corners, Debug info, Auto delay */}
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">

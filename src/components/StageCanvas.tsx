@@ -14,6 +14,8 @@ import { createFaceBonesCopier } from "../engine/faceBonesCopier";
 import { EmotionData, StoryEmotion } from "../engine/storyEmotion";
 import { FaceFlush } from "../engine/faceFlush";
 import { StoryLookAt } from "../engine/storyLookAt";
+import { attachCastSwap, type CastSwap } from "../engine/castSwap/castSwap";
+import { getCastState, loadPjskCatalog, useCastState } from "../castSwapStore";
 import { AudioMixer } from "../engine/AudioMixer";
 import {
   DEFAULT_BREATHING_WEIGHT,
@@ -79,6 +81,11 @@ interface LoadedCharacter extends MotionHost {
   motionClips: Map<string, Promise<THREE.AnimationClip[]>>;
   /** The game's FaceBonesCopier: puts the separate face rig on the animated body each frame */
   copyFaceBones: (() => void) | null;
+  characterId: number;
+  /** PJSK cast swap: the stand-in model copying this character's pose and face, if one is cast */
+  swap: CastSwap | null;
+  /** model id the swap is being set to (a load can still be in flight) */
+  swapWanted: string | null;
 }
 
 interface LoadedProp {
@@ -741,6 +748,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         if (char.name === speaker && lip.level > VOICE_AUDIBLE_LEVEL) char.emotion.voiceActive();
         char.emotion.update(dt);
         char.flush.update(dt);
+        char.swap?.update();
       }
 
       renderer.render(scene, camera);
@@ -854,6 +862,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     renderer.setPixelRatio(ratioMap[resolution] ?? Math.min(dpr, 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
   }, [resolution]);
+
+  // PJSK cast swap: re-cast the characters on stage when the user changes the cast
+  const castState = useCastState();
+  useEffect(() => {
+    Promise.all([...charactersRef.current.values()].map((c) => syncCastSwap(c))).then(() =>
+      renderOnceRef.current?.()
+    );
+  }, [castState]);
 
   // Toggle OrbitControls when cameraMode changes
   useEffect(() => {
@@ -1024,6 +1040,36 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     );
   };
 
+  // PJSK cast swap: attach, swap or remove the stand-in model the user cast for this character
+  const syncCastSwap = async (loaded: LoadedCharacter) => {
+    const { cast, heightMode } = getCastState();
+    const want = cast[String(loaded.characterId)] ?? null;
+    if (want === loaded.swapWanted) {
+      loaded.swap?.setHeightMode(heightMode);
+      return;
+    }
+    loaded.swapWanted = want;
+    loaded.swap?.detach();
+    loaded.swap = null;
+    if (!want) return;
+    const entry = (await loadPjskCatalog()).find((e) => e.id === want);
+    if (!entry) return;
+    try {
+      const swap = await attachCastSwap({
+        rootGroup: loaded.rootGroup,
+        source: loaded.modelScene,
+        entry,
+        loadGltf: (url) => loadGltfCached(gltfLoaderRef.current, url),
+        heightMode,
+      });
+      // superseded while loading (cast changed again, or the character was reloaded)
+      if (loaded.swapWanted !== want || charactersRef.current.get(loaded.name) !== loaded) swap?.detach();
+      else loaded.swap = swap;
+    } catch (err) {
+      console.warn(`[StageCanvas] PJSK model ${want} failed for ${loaded.name}:`, err);
+    }
+  };
+
   // Ensure a character costume is loaded and updated
   const syncCharacter = async (cState: CharacterState, turnIndex: number, arrivedInOrder: boolean) => {
     if (!sceneRef.current) return;
@@ -1160,6 +1206,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           currentEmotion: null,
           motionClips: new Map(),
           copyFaceBones: createFaceBonesCopier(modelScene),
+          characterId: cState.characterId,
+          swap: null,
+          swapWanted: null,
         };
         charactersRef.current.set(cState.name, loaded);
       } catch (err) {
@@ -1168,6 +1217,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
     }
 
+    await syncCastSwap(loaded);
     loaded.rootGroup.visible = enable3D && cState.visible;
     charMovesRef.current.delete(cState.name);
     // Convert Unity (x, y, z) -> Three.js (x, y, -z)

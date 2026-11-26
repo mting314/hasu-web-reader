@@ -104,6 +104,8 @@ def matrix(m) -> np.ndarray:
 
 
 class CostumeExporter:
+    data_texture_hints = DATA_TEXTURE_HINTS  # texture names saved as lossless WebP
+
     def __init__(self, env: UnityPy.Environment, costume_file: str, glb: Glb):
         self.env, self.glb = env, glb
         self.costume_file = costume_file
@@ -183,7 +185,7 @@ class CostumeExporter:
         img = tex.image
         name = tex.m_Name
         buf = io.BytesIO()
-        if any(h in name.lower() for h in DATA_TEXTURE_HINTS):
+        if any(h in name.lower() for h in self.data_texture_hints):
             img.save(buf, "WEBP", lossless=True, method=4)
         else:
             img.save(buf, "WEBP", quality=92, method=4)

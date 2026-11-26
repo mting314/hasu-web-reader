@@ -19,6 +19,11 @@ data = [
 docs = [
     "matplotlib>=3.11.2",
 ]
+# sssekai: Project Sekai's EN asset CDN handshake + bundle de-obfuscation (scripts/pjsk_fetch.py).
+pjsk = [
+    "sssekai>=0.8.4",
+    "requests>=2.31",
+]
 
 [tool.uv]
 package = false
