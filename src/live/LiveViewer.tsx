@@ -217,6 +217,7 @@ export default function LiveViewer() {
     (t: number) => {
       const clock = clockRef.current;
       if (!clock) return;
+      resumeAtRef.current = null; // moving the playhead cancels a pending loop repeat
       clock.time = Math.min(Math.max(0, t), duration || t);
       setTime(clock.time);
     },

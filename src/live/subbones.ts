@@ -7,6 +7,8 @@
  * u16 members; per member: u16 id, u16 reserved, u32 n, f32 time[n], i16 pos[n][16][3] (0.1 mm),
  * i16 rot[n][26][4] (x32767), padding to 4. Unity local space.
  */
+import { RETRY_MS } from "./motion";
+
 export const SUB_MOVE = 16;
 export const SUB_ROTATE = 26;
 
@@ -55,7 +57,9 @@ export class SubBoneStore {
           }
           this.ready.set(i, out);
         })
-        .catch(() => undefined),
+        .catch(() => {
+          setTimeout(() => this.cache.delete(i), RETRY_MS); // retry on a later prefetch
+        }),
     );
   }
 

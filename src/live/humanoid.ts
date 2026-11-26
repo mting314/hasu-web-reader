@@ -98,6 +98,8 @@ export class HumanoidSolver {
   readonly av: AvatarJson;
   private driven: { node: number; chans: [number, number][] }[] = [];
   private zeroed: Set<number>;
+  /** Human nodes whose transforms are forced to identity (the hips' ancestors). */
+  readonly hipsAncestors: ReadonlySet<number>;
   private massBones: { b: number; child: number | null; m: number }[] = [];
 
   constructor(av: AvatarJson) {
@@ -114,6 +116,7 @@ export class HumanoidSolver {
     // the hips and every ancestor are posed at the origin when measuring the body frame
     this.zeroed = new Set([av.hips]);
     for (let p = av.nodes[av.hips].parent; p >= 0; p = av.nodes[p].parent) this.zeroed.add(p);
+    this.hipsAncestors = new Set([...this.zeroed].filter((i) => i !== av.hips));
     const childOf = new Map(av.segments);
     for (const [b, node] of Object.entries(av.bones)) {
       const m = av.mass[b] ?? 0;
@@ -185,10 +188,6 @@ export class HumanoidSolver {
     return { localR, hipsT: sub(rootT, qrot(hq, com)) };
   }
 
-  /** Human nodes whose transforms are forced to identity (the hips' ancestors). */
-  get hipsAncestors(): number[] {
-    return [...this.zeroed].filter((i) => i !== this.av.hips);
-  }
 
   /** World positions (Unity space) of every human skeleton node for a solved pose. */
   globalPositions(pose: Pose): Vec3[] {

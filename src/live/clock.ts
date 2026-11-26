@@ -57,9 +57,13 @@ export class PlaybackClock {
     if (this.startedAt !== null) return;
     this.base = this.time;
     this.startedAt = performance.now();
+    // a refused play() (autoplay policy) only silences this run: try the audio again each Play
+    if (!this.audio.error) this.silentReason = null;
     if (this.audible) {
       this.audio.currentTime = this.base;
       this.audio.play().catch((e: unknown) => {
+        // AbortError just means pause() or a seek interrupted the pending play: not a failure
+        if (e instanceof DOMException && e.name === "AbortError") return;
         this.silentReason = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       });
     }

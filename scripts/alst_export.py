@@ -251,12 +251,15 @@ def main() -> None:
     chunk_idx, total_bytes = 0, 0
     bounds = lambda i: (i * a.chunk_seconds, (i + 1) * a.chunk_seconds)  # noqa: E731
     last_t = 0.0
+    flushed: set[int] = set()
+    late = 0  # frames that arrived after their chunk was written (dropped, not overwritten)
 
     def flush(idx: int):
         nonlocal total_bytes
         members = {cid: fr for cid, fr in pending.get(idx, {}).items() if fr}
         if not members:
             return
+        flushed.add(idx)
         s, e = bounds(idx)
         name = f"chunk_{idx:04d}.bin"
         if a.subbones:
@@ -293,6 +296,9 @@ def main() -> None:
                 vt = fr[0] - offset
                 last_t = max(last_t, vt)
                 idx = max(0, int(vt // a.chunk_seconds))
+                if idx in flushed:
+                    late += 1
+                    continue
                 pending.setdefault(idx, {}).setdefault(cid, []).append(fr)
                 s = sums.setdefault(cid, [0.0, 0.0, 0.0])
                 for k in range(3):
@@ -306,6 +312,8 @@ def main() -> None:
             print(f"  segment {i}/{len(segments)} (video t = {last_t:.0f}s)", flush=True)
     for idx in sorted(pending):
         flush(idx)
+    if late:
+        print(f"warning: dropped {late} frames that arrived more than 15 s after their chunk was written")
 
     if a.faces:
         write_faces(a.out_dir, faces, offset, a.chunk_seconds)
@@ -357,6 +365,19 @@ def main() -> None:
         "timelines": timelines,
         "chunks": sorted(chunks, key=lambda c: c["start"]),
     }
+    # Keep what later steps added to an existing index: live_formation.py's member offsets and
+    # live_setlist.py's timeline labels/titles.
+    prev_path = a.out_dir / "index.json"
+    if prev_path.exists():
+        prev = json.loads(prev_path.read_text())
+        offsets = {m["characterId"]: m["offsets"] for m in prev.get("members", []) if "offsets" in m}
+        for m in index["members"]:
+            if m["characterId"] in offsets:
+                m["offsets"] = offsets[m["characterId"]]
+        notes = {(t["timeline"], round(t["start"], 1)): t for t in prev.get("timelines", [])}
+        for t in index["timelines"]:
+            old_t = notes.get((t["timeline"], round(t["start"], 1)), {})
+            t.update({k: v for k, v in old_t.items() if k not in ("start", "timeline")})
     (a.out_dir / "index.json").write_text(json.dumps(index, indent=1, ensure_ascii=False))
     print(f"wrote {len(chunks)} chunks ({total_bytes / 1e6:.1f} MB), {len(index['members'])} members, "
           f"duration {last_t:.0f}s -> {a.out_dir}")

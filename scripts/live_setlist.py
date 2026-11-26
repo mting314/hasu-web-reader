@@ -20,8 +20,12 @@ import json
 import re
 from pathlib import Path
 
-# <main checkout>/.claude/worktrees/<name>/scripts/live_setlist.py -> <main checkout>
-DEFAULT_INDEX = Path(__file__).resolve().parents[4] / ".inspect-tmp" / "ios_index.jsonl"
+# The bundle index lives in the main checkout: this checkout, or the one a worktree hangs under.
+DEFAULT_INDEX = next(
+    (p / ".inspect-tmp" / "ios_index.jsonl" for p in Path(__file__).resolve().parents
+     if (p / ".inspect-tmp" / "ios_index.jsonl").exists()),
+    Path(".inspect-tmp/ios_index.jsonl"),
+)
 
 
 def main() -> None:

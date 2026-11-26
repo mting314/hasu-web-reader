@@ -100,6 +100,9 @@ export function sampleTrack(tr: MemberTrack, t: number, out?: Float32Array): Sam
   return { pos, rot, muscles };
 }
 
+/** How long a failed chunk fetch is remembered before it may be retried. */
+export const RETRY_MS = 3000;
+
 /** Loads chunks on demand and keeps a small cache around the playhead. */
 export class ChunkStore {
   private cache = new Map<number, Promise<Chunk>>();
@@ -125,6 +128,11 @@ export class ChunkStore {
           this.ready.set(i, c);
           return c;
         });
+      // a failed fetch is forgotten after a few seconds so a later prefetch retries it
+      p.catch((e) => {
+        console.warn(`[live] motion chunk ${i}:`, e);
+        setTimeout(() => this.cache.get(i) === p && this.cache.delete(i), RETRY_MS);
+      });
       this.cache.set(i, p);
     }
     return this.cache.get(i)!;

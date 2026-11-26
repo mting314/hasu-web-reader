@@ -38,6 +38,8 @@ interface Rig {
   face: FaceRig | null;
   /** Helper bones driven by the packet's sub-bone transforms (packet order). */
   sub: { move: (THREE.Object3D | null)[]; rotate: (THREE.Object3D | null)[] };
+  /** The helper bones' rest transforms, restored while no sub-bone sample is available. */
+  subRest: { move: (THREE.Vector3 | null)[]; rotate: (THREE.Quaternion | null)[] };
   /** Both material sets of every mesh (costume / plain colour), switched by setLook. */
   looks: LookMesh[];
   lookKey: string;
@@ -316,7 +318,11 @@ export class LiveStage {
         }
         const byName = (n: string) => model?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(n)) ?? null;
         const sub = { move: (av.subBones?.move ?? []).map(byName), rotate: (av.subBones?.rotate ?? []).map(byName) };
-        const rig: Rig = { costume, solver, model, nodes, faceFollow, face, sub, looks, lookKey: "costume|1" };
+        const subRest = {
+          move: sub.move.map((n) => n?.position.clone() ?? null),
+          rotate: sub.rotate.map((n) => n?.quaternion.clone() ?? null),
+        };
+        const rig: Rig = { costume, solver, model, nodes, faceFollow, face, sub, subRest, looks, lookKey: "costume|1" };
         m.ready.set(costume, rig);
         return rig;
       })().catch((e) => {
@@ -454,7 +460,7 @@ export class LiveStage {
     const hips = solver.av.hips;
     pose.localR.forEach((q, i) => {
       const n = nodes[i];
-      if (!n || solver.hipsAncestors.includes(i)) return;
+      if (!n || solver.hipsAncestors.has(i)) return;
       const g = toGltfQ(q);
       n.quaternion.set(g[0], g[1], g[2], g[3]);
     });
@@ -483,7 +489,7 @@ export class LiveStage {
     const av = rig.solver.av;
     const pts: number[] = [];
     av.nodes.forEach((nd, i) => {
-      if (nd.parent < 0 || rig.solver.hipsAncestors.includes(nd.parent)) return;
+      if (nd.parent < 0 || rig.solver.hipsAncestors.has(nd.parent)) return;
       const a = toGltfT(g[nd.parent]);
       const b = toGltfT(g[i]);
       pts.push(...a, ...b);
@@ -563,6 +569,9 @@ export class LiveStage {
             rig.sub.rotate.forEach((n, i) => {
               if (n) n.quaternion.set(sb.rot[i * 4], -sb.rot[i * 4 + 1], -sb.rot[i * 4 + 2], sb.rot[i * 4 + 3]);
             });
+          } else {
+            rig.sub.move.forEach((n, i) => n && rig.subRest.move[i] && n.position.copy(rig.subRest.move[i]!));
+            rig.sub.rotate.forEach((n, i) => n && rig.subRest.rotate[i] && n.quaternion.copy(rig.subRest.rotate[i]!));
           }
           if (rig.face && this.showFaces) {
             rig.face.apply(expressionAt(this.expressions[String(m.cid)], t), this.lips.sample(m.cid, t), blinkAt(m.cid, t));

@@ -34,7 +34,17 @@ import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-MAIN = HERE.parents[3]
+
+
+def _find_main() -> Path:
+    """The checkout that holds scripts/unity_assets.py and the bundle index (main checkout)."""
+    for p in [HERE.parent, *HERE.parent.parents]:
+        if (p / "scripts" / "unity_assets.py").exists() and (p / ".inspect-tmp" / "ios_index.jsonl").exists():
+            return p
+    raise SystemExit("can't find the main checkout (scripts/unity_assets.py + .inspect-tmp/ios_index.jsonl)")
+
+
+MAIN = _find_main()
 sys.path.insert(0, str(MAIN / "scripts"))
 import unity_assets as UA  # noqa: E402
 

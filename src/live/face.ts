@@ -9,6 +9,7 @@
  * lip-sync values).
  */
 import * as THREE from "three";
+import { RETRY_MS } from "./motion";
 
 export interface FaceJson {
   character: string;
@@ -68,7 +69,9 @@ export class LipStore {
           }
           this.ready.set(i, out);
         })
-        .catch(() => undefined),
+        .catch(() => {
+          setTimeout(() => this.cache.delete(i), RETRY_MS); // retry on a later prefetch
+        }),
     );
   }
 

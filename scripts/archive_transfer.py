@@ -110,7 +110,10 @@ def trim_master(text: str) -> tuple[str, list[str]]:
     media = [l for l in lines if l.startswith("#EXT-X-MEDIA") and attrs(l).get("GROUP-ID") == group]
     if len(media) > 1:  # several tracks in the group: keep the default one
         media = [next((l for l in media if attrs(l).get("DEFAULT") == "YES"), media[0])]
-    header = [l for l in lines if l.startswith("#EXT") and not l.startswith(("#EXT-X-STREAM-INF", "#EXT-X-MEDIA"))]
+    # I-frame and subtitle playlists aren't copied, so drop every reference to them
+    header = [l for l in lines if l.startswith("#EXT")
+              and not l.startswith(("#EXT-X-STREAM-INF", "#EXT-X-MEDIA", "#EXT-X-I-FRAME-STREAM-INF"))]
+    inf = re.sub(r',SUBTITLES="[^"]*"', "", inf)
     out = header + media + [inf, uri]
     kept = [uri] + [attrs(l)["URI"] for l in media if "URI" in attrs(l)]
     return "\n".join(out) + "\n", kept
