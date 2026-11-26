@@ -163,10 +163,17 @@ export function updatePjskShaderState(state: PjskShaderState, head: THREE.Object
   head.getWorldDirection(state.faceFront);
   const up = _v.set(0, 1, 0).transformDirection(head.matrixWorld);
   const [hx, hz] = flatDir(up, -1);
+  const headY = unityEulerY(head);
+  // PJSK's light transform points at the light (SekaiDirectionalLight.Update, 0x607C43C, sets
+  // _SekaiDirectionalLight = transform.forward and the shaders light where it faces the normal);
+  // the story light points along its rays, so PJSK's equivalent is it turned around: forward = the
+  // to-light vector, rotation = story light rotation · Ry(180°).
   const toLight = toonGlobals._MainLightPosition.value as THREE.Vector4;
-  const [lx, lz] = flatDir(_v.set(-toLight.x, -toLight.y, -toLight.z), 1);
-  const lightY = ((toonLightEulerUnity.y % 360) + 360) % 360;
-  state.headDot.set(hx * lx + hz * lz, 1 - Math.abs(Math.abs(lightY - unityEulerY(head)) - 180) / 180, 0, 0);
+  const [lx, lz] = flatDir(_v.set(toLight.x, toLight.y, toLight.z), 1);
+  _euler.set(...(toonLightEulerUnity.toArray().map(THREE.MathUtils.degToRad) as [number, number, number]), "YXZ");
+  _euler.setFromQuaternion(_q.setFromEuler(_euler).multiply(Y180), "YXZ");
+  const lightY = (THREE.MathUtils.radToDeg(_euler.y) + 360) % 360;
+  state.headDot.set(hx * lx + hz * lz, 1 - Math.abs(Math.abs(lightY - headY) - 180) / 180, 0, 0);
   if (hairOffset) state.headPosition.copy(hairOffset).applyMatrix4(head.matrixWorld);
 }
 
