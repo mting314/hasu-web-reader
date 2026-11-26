@@ -6,6 +6,10 @@ import {
 import { ChunkStore, type LiveIndex } from "./motion";
 import { LiveStage, MEMBER_COLORS, type CameraPreset } from "./LiveStage";
 import { PlaybackClock } from "./clock";
+import Minimap from "./Minimap";
+import { fmt } from "./format";
+import { MoveArrows, cueMemberFor, leadFor } from "./moves";
+import { MoveCue, MoveTicks, useMoves } from "./MoveCues";
 
 /**
  * Fes×LIVE 3D choreo viewer: the decoded live motion of every member on a free-camera stage,
@@ -38,18 +42,19 @@ type Settings = {
   /** Seconds of pause before each loop repeat. */
   loopGap: number;
   segments: Segment[];
+  /** Split view: front (the interactive camera) and its exact back view side by side. */
+  split: boolean;
+  /** Formation minimap overlay. */
+  minimap: boolean;
+  /** Spin/walk markers: timeline ticks, early cues and floor arrows (moves.ts). */
+  moves: boolean;
 };
 const DEFAULTS: Settings = {
   rate: 1, mirror: false, offsetMs: 0, hidden: [], skeleton: false, volume: 1, muted: false,
   othersOpacity: 1, plain: false, fanFacing: false, loopGap: 0, segments: [],
+  split: false, minimap: true,
+  moves: true,
 };
-
-function fmt(t: number | null): string {
-  if (t === null || !Number.isFinite(t)) return "--:--.-";
-  const m = Math.floor(Math.max(0, t) / 60);
-  const s = Math.max(0, t) - m * 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
-}
 
 export default function LiveViewer() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -84,6 +89,7 @@ export default function LiveViewer() {
     }
   });
   const { rate, mirror, offsetMs, hidden, skeleton, volume, muted, othersOpacity, plain, fanFacing, loopGap, segments } = settings;
+  const { split, minimap } = settings;
   /** Wall-clock time (performance.now) when a paused loop repeat resumes, during a loop gap. */
   const resumeAtRef = useRef<number | null>(null);
   const [gapLeft, setGapLeft] = useState<number | null>(null);
@@ -92,6 +98,15 @@ export default function LiveViewer() {
 
   const base = `${ASSET_BASE}/${liveId}`;
   const duration = index?.duration ?? 0;
+
+  // spin/walk markers: cues for the followed (or only visible) member
+  const { moves } = settings;
+  const movesFile = useMoves(base);
+  const cueMember = moves && movesFile ? cueMemberFor(follow, onStage, hidden) : null;
+  const cueEvents = cueMember === null ? undefined : movesFile?.members[String(cueMember)];
+  const arrowsRef = useRef(new MoveArrows());
+  const cueRef = useRef({ cid: cueMember, events: cueEvents, lead: leadFor(rate) });
+  cueRef.current = { cid: cueMember, events: cueEvents, lead: leadFor(rate) };
 
   const songs = useMemo(() => {
     if (!index) return [];
@@ -173,6 +188,7 @@ export default function LiveViewer() {
           clock.play();
         }
         const t = clock.time + offsetMs / 1000;
+        arrowsRef.current.update(stage, t, cueRef.current.events, cueRef.current.cid, cueRef.current.lead);
         stage.update(t);
         if (now - lastUi > 50) {
           lastUi = now;
@@ -212,6 +228,14 @@ export default function LiveViewer() {
     stage.plain = plain;
     stage.fanCamFacing = fanFacing;
   }, [hidden, skeleton, othersOpacity, plain, fanFacing, index]);
+
+  // Mirror flips only the main (front) view, through its projection, so split halves never swap.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.split = split;
+    stage.mirror = mirror;
+  }, [split, mirror, index]);
 
   const seek = useCallback(
     (t: number) => {
@@ -341,10 +365,13 @@ export default function LiveViewer() {
       } else if (k === "s") saveSegment();
       else if (k === "p") update({ plain: !plain });
       else if (k === "m") update({ mirror: !mirror });
+      else if (k === "d") update({ split: !split });
       else if (k === "k") update({ skeleton: !skeleton });
+      else if (k === "n") update({ minimap: !minimap });
       else if (/^[1-5]$/.test(k)) setCamera(CAMERAS[Number(k) - 1]);
       else if (k === "f") setFollowMember(null);
       else if (k === "v" && follow !== null) startFanCam(fanCam ? null : follow);
+      else if (k === "w") update({ moves: !moves });
       else handled = false;
       if (handled) e.preventDefault();
     };
@@ -385,7 +412,18 @@ export default function LiveViewer() {
 
       <div className="flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1 bg-black">
-          <div ref={containerRef} className="absolute inset-0" style={{ transform: mirror ? "scaleX(-1)" : undefined }} />
+          <div ref={containerRef} className="absolute inset-0" />
+          {split && (
+            <>
+              <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-slate-700/80" />
+              <span className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/70 px-1.5 py-0.5 text-xs text-slate-200">
+                Front{mirror && <span className="text-sky-300"> (mirrored)</span>}
+              </span>
+              <span className="pointer-events-none absolute bottom-3 left-[calc(50%+0.75rem)] rounded bg-black/70 px-1.5 py-0.5 text-xs text-slate-200">
+                Back
+              </span>
+            </>
+          )}
           <div className="pointer-events-none absolute left-3 top-3 flex gap-1.5 text-xs">
             {rate !== 1 && <span className="rounded bg-black/70 px-1.5 py-0.5 text-amber-300">{rate}×</span>}
             {mirror && <span className="rounded bg-black/70 px-1.5 py-0.5 text-sky-300">Mirrored</span>}
@@ -403,6 +441,18 @@ export default function LiveViewer() {
               </span>
             )}
           </div>
+          {cueMember !== null && (
+            <MoveCue
+              events={cueEvents}
+              cid={cueMember}
+              name={index?.members.find((m) => m.characterId === cueMember)?.name ?? ""}
+              time={time + offsetMs / 1000}
+              lead={leadFor(rate)}
+              mirror={mirror}
+              split={split}
+              stage={stageRef.current}
+            />
+          )}
           <div className="absolute right-3 top-3 flex gap-1 text-xs">
             {CAMERAS.map((c, i) => (
               <button
@@ -415,6 +465,11 @@ export default function LiveViewer() {
               </button>
             ))}
           </div>
+          {minimap && (
+            <div className="pointer-events-none absolute bottom-3 right-3">
+              <Minimap stageRef={stageRef} iconBase={`${ASSET_BASE}/icons`} mirror={mirror} onPick={(cid) => setFollowMember(follow === cid ? null : cid)} />
+            </div>
+          )}
         </div>
 
         <aside className="flex w-72 flex-col overflow-y-auto border-l border-slate-800 text-sm">
@@ -480,6 +535,22 @@ export default function LiveViewer() {
               <input type="checkbox" checked={fanFacing} onChange={(e) => update({ fanFacing: e.target.checked })} className="accent-amber-500" />
               Fan cam stays in front of her
             </label>
+            <label className="flex items-center gap-2" title="Front and back side by side: the right half always shows the left half's camera from behind (D)">
+              <input type="checkbox" checked={split} onChange={(e) => update({ split: e.target.checked })} className="accent-amber-500" />
+              Split view: front and back (D)
+            </label>
+            <label className="flex items-center gap-2" title="Top-down stage map with each member's next 2 s of movement; click a member to follow her (N)">
+              <input type="checkbox" checked={minimap} onChange={(e) => update({ minimap: e.target.checked })} className="accent-amber-500" />
+              Formation minimap (N)
+            </label>
+            <label className="flex items-center gap-2" title="Spin and walk markers on the timeline, plus a cue and a floor arrow shortly before each of the followed member's moves (W)">
+              <input type="checkbox" checked={moves} onChange={(e) => update({ moves: e.target.checked })} className="accent-amber-500" />
+              Spin &amp; walk cues
+            </label>
+            {moves && !movesFile && <div className="text-[11px] text-slate-500">No move data (moves.json) for this live.</div>}
+            {moves && movesFile && cueMember === null && (
+              <div className="text-[11px] text-slate-500">Follow a member to get cues before her spins and walks.</div>
+            )}
           </section>
           <section className="border-b border-slate-800 px-3 py-2">
             <div className="mb-1 font-medium text-slate-300">Setlist</div>
@@ -535,7 +606,8 @@ export default function LiveViewer() {
           <section className="px-3 py-2 text-xs leading-5 text-slate-500">
             <div><kbd>Space</kbd> play · <kbd>,</kbd>/<kbd>.</kbd> frame · <kbd>←</kbd>/<kbd>→</kbd> ±1s</div>
             <div><kbd>[</kbd>/<kbd>]</kbd> speed · <kbd>A</kbd>/<kbd>B</kbd>/<kbd>L</kbd>/<kbd>C</kbd> loop · <kbd>S</kbd> save loop</div>
-            <div><kbd>M</kbd> mirror · <kbd>K</kbd> skeleton · <kbd>P</kbd> plain · <kbd>1</kbd>–<kbd>5</kbd> cameras · <kbd>F</kbd> unfollow · <kbd>V</kbd> fan cam</div>
+            <div><kbd>M</kbd> mirror · <kbd>K</kbd> skeleton · <kbd>P</kbd> plain · <kbd>N</kbd> minimap · <kbd>1</kbd>–<kbd>5</kbd> cameras · <kbd>F</kbd> unfollow · <kbd>V</kbd> fan cam · <kbd>D</kbd> split</div>
+            <div><kbd>W</kbd> spin &amp; walk cues</div>
             <div>Drag to orbit, right-drag to pan, wheel to zoom.</div>
             <label className="mt-2 flex items-center gap-2">
               Audio sync
@@ -577,6 +649,14 @@ export default function LiveViewer() {
             <div
               className={`absolute top-1/2 h-3 -translate-y-1/2 rounded ${loopOn ? "bg-emerald-500/50" : "bg-emerald-500/20"}`}
               style={{ left: pct(loopA), width: `calc(${pct(loopB)} - ${pct(loopA)})` }}
+            />
+          )}
+          {moves && movesFile && index && (
+            <MoveTicks
+              moves={movesFile}
+              members={cueMember !== null ? [cueMember] : index.members.map((m) => m.characterId).filter((c) => onStage.has(c) && !hidden.includes(c))}
+              names={Object.fromEntries(index.members.map((m) => [m.characterId, m.name]))}
+              duration={duration}
             />
           )}
           <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow" style={{ left: pct(time) }} />

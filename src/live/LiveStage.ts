@@ -52,6 +52,8 @@ interface LookMesh {
   plain: THREE.Material[];
   /** Per material slot, as exported: restored when the member stops being ghosted. */
   base: { transparent: boolean; opacity: number }[];
+  /** Depth-only twin drawn just before the mesh while the member is ghosted (see depthTwin). */
+  depth: THREE.Mesh | null;
 }
 
 const FACE_BONES = ["Spine_03", "Neck", "Head"];
@@ -105,9 +107,13 @@ interface Member {
   facing: THREE.Vector3;
   visible: boolean;
   present: boolean;
+  /** Opacity the model was drawn at in the last update (0 = not drawn). */
+  drawnAlpha: number;
 }
 
 const UNLIT = /^(Face|Eye|Brow|EyeHi|EyeShadow|EyeLens)/i;
+/** Reflection through the x = 0 plane. */
+const MIRROR_X = new THREE.Matrix4().makeScale(-1, 1, 1);
 const HIDDEN_MESHES = /^(EyeLens|EyeShadow)$/;
 
 export class LiveStage {
@@ -128,6 +134,14 @@ export class LiveStage {
   plain = false;
   /** Unit vector (three.js space) from the stage towards the audience: members face +z at MC lineups. */
   audience = new THREE.Vector3(0, 0, 1);
+  /** Split view: the main camera on the left, its exact back view (backCamera) on the right. */
+  split = false;
+  /** Mirror the main view left-right (the back view never is: from behind, left and right already match). */
+  mirror = false;
+  /** The main camera mirrored through the controls' target, re-placed every frame while split. */
+  readonly backCamera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
+  /** Time (s) of the last update. */
+  time = 0;
 
   private loader = new GLTFLoader();
   private lips: LipStore;
@@ -137,10 +151,19 @@ export class LiveStage {
   private expressions: Record<string, ExpressionTrack> = {};
   showFaces = true;
   private muscles = new Float32Array(MUSCLE_COUNT);
+  /** Scratch for positionAt, which only needs the root. */
+  private aheadPos: Vec3 = [0, 0, 0];
+  private aheadRoot: Vec3 = [0, 0, 0];
   private gradient: THREE.DataTexture;
   private centre: Vec3;
   private disposed = false;
   private lastFrame = performance.now();
+  /**
+   * Draws the mirrored main view: the main camera's world matrix conjugated by the x mirror, looking
+   * at the scene scaled by -1 in x. That gives the mirror image of the main view, and since every
+   * object matrix is then mirrored, three flips triangle winding (culling, two-sided normals) itself.
+   */
+  private readonly mirrorCamera = new THREE.PerspectiveCamera();
 
   constructor(
     private container: HTMLElement,
@@ -158,6 +181,8 @@ export class LiveStage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.mirrorCamera.matrixAutoUpdate = false;
+    this.mirrorCamera.matrixWorldAutoUpdate = false;
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -190,13 +215,13 @@ export class LiveStage {
         new THREE.BufferGeometry(),
         new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }),
       );
-      skeleton.renderOrder = 10;
+      skeleton.renderOrder = 1000; // after the ghosts, whose render order goes up with their count
       this.scene.add(skeleton);
       this.members.set(m.characterId, {
         cid: m.characterId, name: m.name, costumes: m.costumes, offsets: m.offsets ?? [],
         visibility: m.visibility ?? [], onStage: true, rigs: new Map(), ready: new Map(),
         active: null, skeleton, hips: new THREE.Vector3(), facing: new THREE.Vector3(0, 0, 1),
-        visible: true, present: false,
+        visible: true, present: false, drawnAlpha: 0,
       });
     }
     this.resize();
@@ -216,8 +241,89 @@ export class LiveStage {
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = "100%";
     this.renderer.domElement.style.height = "100%";
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.layout();
+  }
+
+  /**
+   * Viewports in CSS pixels: the whole canvas, or with split on the left half for the main camera
+   * and the right half for the back camera. Sets each camera's aspect and projection (every frame,
+   * so toggling split needs no extra call). The main view is mirrored at render time when `mirror`.
+   */
+  private layout(): { cam: THREE.PerspectiveCamera; x: number; w: number; h: number; mirror: boolean }[] {
+    const { x: width, y: h } = this.renderer.getSize(new THREE.Vector2());
+    const half = this.split ? Math.floor(width / 2) : width;
+    const views = [{ cam: this.camera, x: 0, w: half, h, mirror: this.mirror }];
+    if (this.split) views.push({ cam: this.backCamera, x: half, w: width - half, h, mirror: false });
+    for (const v of views) {
+      v.cam.aspect = Math.max(1, v.w) / Math.max(1, h);
+      v.cam.updateProjectionMatrix();
+    }
+    return views;
+  }
+
+  /**
+   * Render the main view, and with split on the back view beside it: the main camera rotated 180°
+   * about the vertical through the target (same height and distance), so orbit, zoom, follow and fan
+   * cam all carry over to it.
+   */
+  private render() {
+    if (this.split) {
+      const back = this.backCamera;
+      const target = this.controls.target;
+      const eye = this.camera.position;
+      back.fov = this.camera.fov;
+      back.near = this.camera.near;
+      back.far = this.camera.far;
+      back.position.set(2 * target.x - eye.x, eye.y, 2 * target.z - eye.z);
+      back.lookAt(target);
+    }
+    const views = this.layout();
+    this.renderer.setScissorTest(this.split);
+    for (const v of views) {
+      this.renderer.setViewport(v.x, 0, v.w, v.h);
+      this.renderer.setScissor(v.x, 0, v.w, v.h);
+      this.prepareView(v.cam); // in unmirrored stage space: the mirror is applied below
+      if (!v.mirror) {
+        this.renderer.render(this.scene, v.cam);
+        continue;
+      }
+      const mc = this.mirrorCamera;
+      mc.fov = v.cam.fov;
+      mc.near = v.cam.near;
+      mc.far = v.cam.far;
+      mc.aspect = v.cam.aspect;
+      mc.updateProjectionMatrix();
+      v.cam.updateMatrixWorld();
+      mc.matrixWorld.copy(MIRROR_X).multiply(v.cam.matrixWorld).multiply(MIRROR_X);
+      mc.matrixWorldInverse.copy(mc.matrixWorld).invert();
+      this.scene.scale.x = -1;
+      this.renderer.render(this.scene, mc);
+      this.scene.scale.x = 1;
+      this.scene.updateMatrixWorld(); // posing next frame reads world matrices
+    }
+    this.renderer.setScissorTest(false);
+  }
+
+  /**
+   * Per-view visibility and order: hide whoever blocks this camera's fan-cam shot, and sort the
+   * ghosted members back to front, each one's depth twins just before her colour (see depthTwin).
+   */
+  private prepareView(cam: THREE.Camera) {
+    const ghosts: Member[] = [];
+    for (const m of this.members.values()) {
+      const model = m.active?.model;
+      if (!model || m.drawnAlpha <= 0) continue;
+      model.visible = !this.occludesFanCam(m, cam.position);
+      if (model.visible && m.drawnAlpha < 0.999) ghosts.push(m);
+    }
+    const d = (m: Member) => m.hips.distanceToSquared(cam.position);
+    ghosts.sort((a, b) => d(b) - d(a));
+    ghosts.forEach((m, i) => {
+      for (const l of m.active!.looks) {
+        if (l.depth) l.depth.renderOrder = 1 + 2 * i;
+        l.mesh.renderOrder = 2 + 2 * i;
+      }
+    });
   }
 
   /**
@@ -278,6 +384,28 @@ export class LiveStage {
     let o: { dx: number; dz: number } | null = null;
     for (const e of m.offsets) if (t >= e.from - 0.5) o = e;
     return o ?? m.offsets[0] ?? null;
+  }
+
+  /** Root position (game space) on the stage: the sample's capture-space pos moved to her formation slot. */
+  private stageRoot(m: Member, t: number, pos: Vec3, out: Vec3): Vec3 {
+    const off = this.offsetAt(m, t);
+    out[0] = off ? pos[0] + off.dx : pos[0] - this.centre[0];
+    out[1] = pos[1];
+    out[2] = off ? pos[2] + off.dz : pos[2] - this.centre[2];
+    return out;
+  }
+
+  /**
+   * Where member cid's hips are at time t (three.js world space, same placement as update), for
+   * looking ahead of the playhead. False while she's off stage or that motion chunk isn't loaded.
+   */
+  positionAt(cid: number, t: number, out: THREE.Vector3): boolean {
+    const m = this.members.get(cid);
+    if (!m || !this.visibleAt(m, t)) return false;
+    if (!this.store.samplePosition(cid, t, this.aheadPos)) return false;
+    const r = this.stageRoot(m, t, this.aheadPos, this.aheadRoot);
+    out.set(-r[0], r[1], r[2]); // toGltfT
+    return true;
   }
 
   private costumeAt(m: Member, t: number): string | null {
@@ -354,7 +482,7 @@ export class LiveStage {
       }
       const array = Array.isArray(mesh.material);
       const mats = array ? (mesh.material as THREE.Material[]) : [mesh.material as THREE.Material];
-      const look: LookMesh = { mesh, array, costume: [], plain: [], base: [] };
+      const look: LookMesh = { mesh, array, costume: [], plain: [], base: [], depth: null };
       for (const mat of mats) {
         const src = mat as THREE.MeshStandardMaterial;
         const common = {
@@ -385,7 +513,47 @@ export class LiveStage {
       mesh.material = array ? look.costume : look.costume[0];
       looks.push(look);
     });
+    for (const l of looks) l.depth = this.depthTwin(l); // after the traversal, which would visit them
     return looks;
+  }
+
+  /**
+   * A depth-only copy of a mesh for ghosting. Drawn just before the ghost's colour, it leaves only
+   * her nearest surface able to pass the depth test (colour uses LessEqual), so she reads as one
+   * translucent silhouette instead of showing eyes through hair and body through costume. Shares the
+   * mesh's geometry, skeleton and morph weights; hidden until the member is ghosted.
+   */
+  private depthTwin(l: LookMesh): THREE.Mesh {
+    const src = l.mesh;
+    const mats = l.costume.map((m, i) => {
+      const c = m as THREE.MeshBasicMaterial;
+      const d = new THREE.MeshBasicMaterial({
+        map: c.map, side: c.side, transparent: true, colorWrite: false, depthWrite: true,
+        // blended textures (lace, soft hair tips) only hide what's behind where they're mostly opaque
+        alphaTest: Math.max(c.alphaTest, l.base[i].transparent ? 0.5 : 0),
+        // a hair further back, so the same surface's colour never loses the depth test to it
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      });
+      d.name = `${c.name} (depth)`;
+      d.visible = c.depthWrite && c.blending === THREE.NormalBlending; // not the additive eye sparkles
+      return d;
+    });
+    const mat = l.array ? mats : mats[0];
+    let twin: THREE.Mesh;
+    if ((src as THREE.SkinnedMesh).isSkinnedMesh) {
+      const s = src as THREE.SkinnedMesh;
+      const t = new THREE.SkinnedMesh(src.geometry, mat);
+      t.bindMode = s.bindMode;
+      t.bind(s.skeleton, s.bindMatrix);
+      twin = t;
+    } else twin = new THREE.Mesh(src.geometry, mat);
+    twin.morphTargetInfluences = src.morphTargetInfluences; // the same array, so expressions carry over
+    twin.morphTargetDictionary = undefined; // keeps FaceRig from driving it a second time
+    twin.name = `depth:${src.name}`; // not "3d_face…", which reattachFace would move
+    twin.frustumCulled = false;
+    twin.visible = false;
+    src.add(twin); // identity transform: same world matrix as the mesh
+    return twin;
   }
 
   /**
@@ -406,6 +574,8 @@ export class LiveStage {
         mat.opacity = b.opacity * alpha;
       });
       l.mesh.material = l.array ? mats : mats[0];
+      if (l.depth) l.depth.visible = ghost;
+      if (!ghost) l.mesh.renderOrder = 0; // ghosts are ordered per view in prepareView
     }
   }
 
@@ -414,12 +584,11 @@ export class LiveStage {
     for (const m of this.members.values()) for (const c of m.costumes) this.loadRig(m, c.costume);
   }
 
-  /** Is member m between the camera and the fan-cam target (within ~0.45 m of the sight line)? */
-  private occludesFanCam(m: Member): boolean {
+  /** Is member m between the camera at `cam` and the fan-cam target (within ~0.45 m of the sight line)? */
+  private occludesFanCam(m: Member, cam: THREE.Vector3): boolean {
     if (!this.fanCamActive || this.follow === null || m.cid === this.follow) return false;
     const target = this.members.get(this.follow);
     if (!target?.present) return false;
-    const cam = this.camera.position;
     const a = new THREE.Vector2(cam.x, cam.z);
     const b = new THREE.Vector2(target.hips.x, target.hips.z);
     const p = new THREE.Vector2(m.hips.x, m.hips.z);
@@ -527,10 +696,12 @@ export class LiveStage {
   /** Pose everyone for time t and render. */
   update(t: number) {
     if (this.disposed) return;
+    this.time = t;
     this.store.prefetch(t);
     this.lips.prefetch(t);
     if (this.subBones) this.subs.prefetch(t);
     for (const m of this.members.values()) {
+      m.drawnAlpha = 0;
       const costume = this.costumeAt(m, t);
       if (!costume) continue;
       this.loadRig(m, costume);
@@ -544,10 +715,7 @@ export class LiveStage {
         m.skeleton.visible = false;
         continue;
       }
-      const off = this.offsetAt(m, t);
-      const rootT: Vec3 = off
-        ? [s.pos[0] + off.dx, s.pos[1], s.pos[2] + off.dz]
-        : [s.pos[0] - this.centre[0], s.pos[1], s.pos[2] - this.centre[2]];
+      const rootT = this.stageRoot(m, t, s.pos, [0, 0, 0]);
       const pose = rig.solver.solve(s.muscles, rootT, s.rot);
       const hipsWorld = toGltfT(rootT);
       m.hips.set(hipsWorld[0], hipsWorld[1], hipsWorld[2]);
@@ -556,8 +724,9 @@ export class LiveStage {
       if (fwd.lengthSq() > 1e-6) m.facing.copy(fwd.normalize());
       if (rig.model) {
         const alpha = this.follow !== null && m.cid !== this.follow ? this.othersOpacity : 1;
-        const shown = m.visible && alpha > 0.01 && !this.occludesFanCam(m);
+        const shown = m.visible && alpha > 0.01;
         rig.model.visible = shown;
+        m.drawnAlpha = shown ? alpha : 0; // fan-cam occluders are hidden per view, in prepareView
         if (shown) {
           this.setLook(rig, this.plain, alpha);
           this.applyPose(rig, pose);
@@ -595,6 +764,6 @@ export class LiveStage {
       }
     }
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    this.render();
   }
 }
