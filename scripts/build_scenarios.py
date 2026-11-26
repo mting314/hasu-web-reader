@@ -571,6 +571,7 @@ def compile_script(
                 # No model for this prop in our store: leave it off the stage rather than
                 # shipping a reference that can only 404.
                 MISSING_ASSETS.setdefault(glb_rel, script_id)
+                state["props"].pop(alias, None)  # the slot is emptied, not left with an older prop
                 continue
             extra_urls = [asset_url(f"3d/{e}", script_id) for e in (pinfo.get("extraGlbs") or [])]
             tex_dir = pinfo.get("textureDir") or f"ppadv/{prop_id}/"

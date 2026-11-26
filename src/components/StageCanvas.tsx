@@ -44,9 +44,9 @@ interface StageCanvasProps {
   resolution?: StageResolution;
   audioMixer: AudioMixer;
   onAdvance: () => void;
-  /** Called with the turn index once that line's stage assets (background, cast, their motions,
+  /** Called with the turn once that line's stage assets (background, cast, their motions,
    * props) have loaded or failed: the reader holds the line until then. */
-  onStageReady?: (turnIndex: number) => void;
+  onStageReady?: (turn: DialogueTurn) => void;
 }
 
 interface LoadedCharacter extends MotionHost {
@@ -131,10 +131,6 @@ function loadGltfCached(loader: GLTFLoader, url: string): Promise<any> {
   if (!p) {
     p = new Promise((resolve, reject) => {
       loader.load(url, resolve, undefined, reject);
-    });
-    // Avoid caching permanent rejections if a transient network glitch occurs
-    p.catch(() => {
-      gltfCache.delete(url);
     });
     gltfCache.set(url, p);
     // Forget failed loads so a later request can retry (callers still see the rejection).
@@ -373,10 +369,12 @@ export function startTieredEpisodePreloader(
             await loadGltfCached(sharedGltfLoader, mUrl).catch(() => null);
           });
         }
-        if (ev.seUrl) {
-          const sUrl = String(ev.seUrl);
-          enqueue(`se:${sUrl}`, "lookahead", () => prewarmAudioAsync(sUrl));
-        }
+      }
+    }
+    for (const ev of [...t.preEvents, ...t.intraEvents]) {
+      if (ev.seUrl) {
+        const sUrl = String(ev.seUrl);
+        enqueue(`se:${sUrl}`, "lookahead", () => prewarmAudioAsync(sUrl));
       }
     }
   }
@@ -1146,15 +1144,16 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
     }
     setCameraTarget(snap.camera.position, snap.camera.rotation, initialCamDur);
-    applyFade(snap.fade, 0);
+    const arrivedInOrder = prevTurnIndexRef.current === turn.index - 1;
+    prevTurnIndexRef.current = turn.index;
+    // a fade folded into the snapshot came from the line's start: reading in order it plays out
+    applyFade(snap.fade, arrivedInOrder ? Number(snap.fade?.duration ?? 0) : 0);
 
     // 3. Characters & Props. Everything the line's first frame needs is collected so the reader
     // can hold the line (voice, timeline, Next) until the stage is ready.
     let cancelled = false;
     const loads: Promise<unknown>[] = [];
     if (snap.background.url) loads.push(prewarmTextureAsync(snap.background.url, true));
-    const arrivedInOrder = prevTurnIndexRef.current === turn.index - 1;
-    prevTurnIndexRef.current = turn.index;
     for (const cState of Object.values(snap.characters)) {
       loads.push(syncCharacter(cState, turn.index, arrivedInOrder));
     }
@@ -1166,14 +1165,25 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
     loads.push(syncProps(snap.props));
     void Promise.allSettled(loads).then(() => {
-      if (!cancelled) onStageReadyRef.current?.(turn.index);
+      if (!cancelled) onStageReadyRef.current?.(turn);
     });
 
     // 4. Play the line's timeline. Events at the same moment are applied together, so a cut that
     // shows one character, hides another and moves the camera never shows half-done. Events that
     // change the camera, background, props, fades or music carry the state they leave behind
     // (build_scenarios.event_state), applied with the same code as a line's starting snapshot.
+    const pendingSpawns = new Map<string, Promise<void>>();
     const applyEvent = (ev: IntraEvent) => {
+      const spawning = ev.character && ev.type !== "char_spawn" ? pendingSpawns.get(ev.character) : undefined;
+      if (spawning) {
+        void spawning.then(() => {
+          if (!cancelled) applyEventNow(ev);
+        });
+        return;
+      }
+      applyEventNow(ev);
+    };
+    const applyEventNow = (ev: IntraEvent) => {
       const c = ev.character ? charactersRef.current.get(ev.character) : undefined;
       switch (ev.type) {
         case "char_motion":
@@ -1219,7 +1229,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           }
           break;
         case "char_spawn":
-          if (ev.characterState) void syncCharacter(ev.characterState, turn.index, false);
+          if (ev.characterState) {
+            // events for this character in the same (or a later) moment wait for its model
+            pendingSpawns.set(ev.character, syncCharacter(ev.characterState, turn.index, false));
+          }
           break;
         case "char_move":
           if (c && Array.isArray(ev.position)) {

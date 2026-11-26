@@ -21,7 +21,26 @@ export const EpisodeTimeline: React.FC<{
 }> = ({ series, catalog, activeScriptId, onSelect, onPrewarm, formatDuration }) => {
   const byScript = new Map(catalog.map((ep) => [ep.scriptId, ep]));
   // monthly episodes that have at least one readable part, in the game's order
-  const shown = series.filter((s) => s.parts.some((p) => byScript.has(p.scriptId)));
+  const indexed = series.filter((s) => s.parts.some((p) => byScript.has(p.scriptId)));
+  // catalog episodes the index doesn't cover (or every episode, if it failed to load) still get a
+  // timeline, built from the catalog (no art)
+  const covered = new Set(indexed.flatMap((s) => s.parts.map((p) => p.scriptId)));
+  const fallback = new Map<string, StoryIndexSeries>();
+  for (const ep of catalog) {
+    if (covered.has(ep.scriptId)) continue;
+    let s = fallback.get(ep.seriesId);
+    if (!s) {
+      s = {
+        id: Number(ep.seriesId), segment: 0, fiscalYear: 0, yearText: ep.term, monthText: ep.month,
+        title: ep.seriesTitleJp, description: ep.descriptionJp, titleEn: ep.seriesTitleEn,
+        descriptionEn: ep.descriptionEn, card: null, cardShape: "wide", parts: [],
+      };
+      fallback.set(ep.seriesId, s);
+    }
+    s.parts.push({ scriptId: ep.scriptId, slug: ep.slug ?? ep.scriptId, label: ep.partTitleJp, number: "", thumbnail: null,
+      available: true, titleEn: ep.partTitleEn });
+  }
+  const shown = [...indexed, ...fallback.values()];
 
   return (
     <div className="flex flex-col gap-4">
@@ -89,6 +108,7 @@ export const EpisodeTimeline: React.FC<{
                               : "border-slate-800"
                         }`}
                       >
+                        {!p.thumbnail && <span className="absolute inset-0 bg-slate-900" />}
                         {p.thumbnail && (
                           <img
                             src={assetUrl(p.thumbnail)}

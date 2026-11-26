@@ -316,8 +316,9 @@ export default function App() {
 
   // The current line's stage (background, cast, motions, props) has loaded: until then advancing is
   // blocked, so a first load can't skip ahead through lines whose models haven't appeared yet.
-  const [stageReadyIndex, setStageReadyIndex] = useState(-1);
-  const stageReady = !settings.enable3DStage || stageReadyIndex === currentTurnIndex;
+  // (The turn object, not its index: line 0 of a newly picked episode must not count as ready.)
+  const [stageReadyTurn, setStageReadyTurn] = useState<DialogueTurn | null>(null);
+  const stageReady = !settings.enable3DStage || (currentTurn !== null && stageReadyTurn === currentTurn);
 
   /** Step to the next line immediately (Next button, auto mode). */
   const handleNext = useCallback(() => {
@@ -336,7 +337,6 @@ export default function App() {
    * Click when text is already complete -> advances to the next line.
    */
   const handleStageOrKeyAdvance = useCallback(() => {
-    if (!stageReady) return;
     if (!isTypewriterDone) {
       setRevealedChars(9999);
       return;
@@ -1020,7 +1020,7 @@ export default function App() {
                 resolution={settings.stageResolution}
                 audioMixer={AudioMixer}
                 onAdvance={handleStageOrKeyAdvance}
-                onStageReady={setStageReadyIndex}
+                onStageReady={setStageReadyTurn}
               />
 
               {/* Floating White Pill Controls on Stage Canvas (exact pjsk.cleista.cc layout) */}

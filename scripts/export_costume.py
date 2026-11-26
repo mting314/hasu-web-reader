@@ -26,11 +26,11 @@ from __future__ import annotations
 import argparse
 import io
 import json
-import struct
 import sys
 from pathlib import Path
 
 import numpy as np
+import pygltflib
 import UnityPy
 from UnityPy.helpers.MeshHelper import MeshHandler
 
@@ -42,29 +42,6 @@ DEFAULT_INDEX = ROOT / ".inspect-tmp" / "ios_index.jsonl"
 DEFAULT_OUT = ROOT / "public" / "assets" / "3d" / "costume"
 MIRROR = np.diag([-1.0, 1.0, 1.0, 1.0])
 DATA_TEXTURE_HINTS = ("controlmap", "mask", "normal", "gloss", "matcap", "_nml", "_ctrl")
-
-
-def load_closure(index: UA.BundleIndex, container: str) -> tuple[UnityPy.Environment, str]:
-    start = index.by_container[container]
-    seen, queue, files = set(), [start], []
-    while queue:
-        rec = queue.pop()
-        if rec["file"] in seen:
-            continue
-        seen.add(rec["file"])
-        files.append(rec)
-        for dep in rec.get("deps", []):
-            r = index.by_cab.get(dep.split(".")[0])
-            if r is not None:
-                queue.append(r)
-    env = UnityPy.Environment()
-    for rec in files:
-        path = (index.base / rec["file"]).resolve()
-        data = path.read_bytes()
-        if data[2:9] == b"UnityFS":
-            data = data[2:]
-        env.load_file(data, name=path.name)
-    return env, (index.base / start["file"]).resolve().name
 
 
 class Glb:
@@ -104,21 +81,15 @@ class Glb:
         return len(self.gltf["accessors"]) - 1
 
     def write(self, path: Path) -> None:
-        g = self.gltf
+        """Serialize with pygltflib (it validates the structure and writes the GLB container)."""
+        g = dict(self.gltf)
         for key in ("skins", "materials", "textures", "images", "samplers", "meshes"):
             if not g[key]:
                 del g[key]
-        while len(self.bin) % 4:
-            self.bin.append(0)
         g["buffers"] = [{"byteLength": len(self.bin)}]
-        js = json.dumps(g, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-        js += b" " * ((4 - len(js) % 4) % 4)
-        with open(path, "wb") as fh:
-            fh.write(struct.pack("<4sII", b"glTF", 2, 12 + 8 + len(js) + 8 + len(self.bin)))
-            fh.write(struct.pack("<I4s", len(js), b"JSON"))
-            fh.write(js)
-            fh.write(struct.pack("<I4s", len(self.bin), b"BIN\x00"))
-            fh.write(bytes(self.bin))
+        gltf = pygltflib.GLTF2.from_dict(g)
+        gltf.set_binary_blob(bytes(self.bin))
+        gltf.save_binary(str(path))
 
 
 def vec(d: dict, keys="xyz") -> list[float]:
@@ -442,7 +413,7 @@ def main() -> None:
     args = ap.parse_args()
     index = UA.BundleIndex(args.index)
     for cid in args.costumes:
-        env, costume_file = load_closure(index, cid)
+        env, costume_file = index.load_closure(cid)
         glb = Glb()
         ex = CostumeExporter(env, costume_file, glb)
         ex.run()

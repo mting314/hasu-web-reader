@@ -6,6 +6,8 @@ keyed by the game's AdvSeries id: /en/story/series/<id>, with the English title 
 synopsis in the <p> right after it. Pages are cached in data_cache/hasuko_en_series_<id>.html (like
 the build's per-part caches). Series without a page keep titleEn / descriptionEn = null.
 
+Run it after scripts/build_story_index.py, which rewrites the index without the English fields.
+
 Usage: uv run scripts/hasuko_series_en.py [--refresh]
 """
 

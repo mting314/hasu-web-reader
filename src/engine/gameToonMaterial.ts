@@ -221,6 +221,9 @@ function uniformsFor(
 function namesOf(src: string): string[] {
   return Object.keys(UBER_UNIFORMS).filter((n) => new RegExp(`\\b${n}\\b`).test(src));
 }
+// the uniforms each pass reads, worked out once (the program sources are constants)
+const FORWARD_UNIFORMS = [...new Set([...namesOf(FORWARD_VERT), ...namesOf(FORWARD_FRAG)])];
+const OUTLINE_UNIFORMS = [...new Set([...namesOf(OUTLINE_VERT), ...namesOf(OUTLINE_FRAG)])];
 
 function applyStencil(m: THREE.Material, f: Record<string, number>) {
   const v = (k: string, d: number) => f[k] ?? (UBER_DEFAULTS[k] as number | undefined) ?? d;
@@ -267,7 +270,7 @@ export async function createGameToonPasses(
     name: `${name} (ForwardLit)`,
     vertexShader: FORWARD_VERT,
     fragmentShader: FORWARD_FRAG,
-    uniforms: uniformsFor([...new Set([...namesOf(FORWARD_VERT), ...namesOf(FORWARD_FRAG)])], unity, textures),
+    uniforms: uniformsFor(FORWARD_UNIFORMS, unity, textures),
     side: CULL[num("_CullMode")] ?? THREE.FrontSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
@@ -289,7 +292,7 @@ export async function createGameToonPasses(
     name: `${name} (Outline)`,
     vertexShader: OUTLINE_VERT,
     fragmentShader: OUTLINE_FRAG,
-    uniforms: uniformsFor([...new Set([...namesOf(OUTLINE_VERT), ...namesOf(OUTLINE_FRAG)])], unity, textures),
+    uniforms: uniformsFor(OUTLINE_UNIFORMS, unity, textures),
     side: CULL[num("_OutlineCullMode")] ?? THREE.BackSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,

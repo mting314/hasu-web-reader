@@ -291,11 +291,11 @@ the clip's own hand goals. Across episode 1's 580 main clips the median is 0.3 c
 clip. It's body proportions: the goals record where the hands were on the body the motion was
 made on, and the same clips baked on the 14 character rigs give 0.26 cm (Sachi) to 2.5 cm (Kozue,
 Hime). The game shows the same gap, since nothing applies IK (Foot IK off, IK layer at weight 0).
-Foot goals sit at the sole, 8.1 cm below the ankle. To eyeball a motion without a browser,
-`uv run scripts/render_motion_preview.py mot_00_01060 … --out docs/media/x.mp4` renders a
-before/after video (CPU skinning on the costume GLB, game clip order; upload it with
-`scripts/upload_docs_media.sh` rather than committing it). `3d/metadata/motions.json`
-has the Japanese description of each motion, which is useful for checking what you see.
+Foot goals sit at the sole, 8.1 cm below the ankle. Check motions in the real reader
+(`<StageCanvas />` in Chrome, see "Environment gotchas"), not with `scripts/render_motion_preview.py`:
+that CPU renderer predates the ground rule above and doesn't exercise the shaders, mixer or
+retargeting; it's kept only for the old proof videos. `3d/metadata/motions.json` has the Japanese
+description of each motion, which is useful for checking what you see.
 
 ## The game's code (`data-inspect/client-dump/`)
 
