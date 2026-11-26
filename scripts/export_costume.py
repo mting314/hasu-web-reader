@@ -186,7 +186,8 @@ class CostumeExporter:
         name = tex.m_Name
         buf = io.BytesIO()
         if any(h in name.lower() for h in self.data_texture_hints):
-            img.save(buf, "WEBP", lossless=True, method=4)
+            # exact: keep RGB under alpha 0 (control maps store data there; WebP drops it by default)
+            img.save(buf, "WEBP", lossless=True, exact=True, method=4)
         else:
             img.save(buf, "WEBP", quality=92, method=4)
         g = self.glb.gltf

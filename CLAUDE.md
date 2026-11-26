@@ -463,9 +463,22 @@ A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored i
   still apply).
 - Default size: the replaced character's rest hip height (feet and seats line up; PJSK torsos are
   shorter, so heads sit lower). "Use Project Sekai heights" scales to `gameCharacters.height`.
-- Not done yet: PJSK's shaders (`Sekai/Live/Character/Toon-v3`, `Eye-Base`, `Eye-Highlight`; the
-  model renders unlit), spring bones (UTJ `SpringManager`), eye look-at (PJSK eyes move by
-  `BS_look.*` blendshapes, not bones), helper bones (`*ArmRoll`, `*EllbowSupport`).
+- Eyes: PJSK has no eye bones; `pjskFace.ts` reads the Hasu eye bones' angle as Unity eye muscle
+  values (the Hasu Avatar's limits, In-Out ±20°, Down-Up −10°…+15°) onto `BS_look.*`.
+- **Shaders**: the Android `shader/live` bundle keeps every variant as GLSL ES 3.0 (HLSLcc), so
+  `scripts/pjsk_shader_to_glsl.py` only adapts inputs (uniform blocks off, three's skinning/morph
+  for `in_*`, Unity matrices from three's) and writes `src/engine/shaders/pjskToonGame.ts`.
+  The shader blob is LZ4 per platform (index 0 = GLES3, `platforms` 9) and starts with a count and
+  12-byte (offset, length, segment) entries; each pass's `m_PlayerSubPrograms` maps keyword sets to
+  blob indices. `pjskMaterial.ts` feeds material values from `extras.unity` and neutral `_Sekai*`
+  stage globals (the story light is shared with the Hasu toon shader).
+- Not done yet: Toon-v3's `_UseFaceSDF` / `_HAIR_SHADOW` variants (they read
+  `_HeadDotDirectionalLightValues`, set on the CPU by code not found yet; everything uses the
+  `_LAMBERT` Base variant), the outline (the Outline pass doesn't inflate the mesh: PJSK draws
+  outlines from its extra render targets later), the Eyelash pass, spring bones (UTJ
+  `SpringManager`), helper bones (`*ArmRoll`, `*EllbowSupport`).
+- Export gotcha (fixed in `export_costume.py`): lossless WebP drops RGB under alpha 0 unless saved
+  with `exact=True`; PJSK's `_ValueTex` (and possibly Hasu control maps) store data there.
 
 ## Inspecting the reference reader (Cleista, `pjsk.cleista.cc`)
 

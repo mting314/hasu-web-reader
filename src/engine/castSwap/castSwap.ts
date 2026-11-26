@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
-import { createEyeHighlightMaterial } from "../UberToonMaterial";
 import { createPjskFace } from "./pjskFace";
+import { preparePjskShaders, setPjskShaderTime, type PjskShaderState } from "./pjskMaterial";
 import { createPjskRetarget } from "./pjskRetarget";
 
 /**
@@ -32,36 +32,6 @@ export interface CastSwap {
   detach(): void;
 }
 
-/**
- * Simple materials for M1: the colour texture unlit (decoded and re-encoded as sRGB, so it shows
- * the stored values like the game's gamma-space rendering). PJSK's own shaders
- * (`Sekai/Live/Character/Toon-v3`, `Eye-Base`, `Eye-Highlight`) aren't ported yet.
- */
-function preparePjskMaterials(scene: THREE.Object3D) {
-  scene.traverse((node) => {
-    const mesh = node as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.frustumCulled = false;
-    const convert = (m: THREE.Material) => {
-      const std = m as THREE.MeshStandardMaterial;
-      const shader: string = m.userData?.unity?.shader ?? "";
-      const map = std.map ?? null;
-      if (shader.endsWith("/Eye-Highlight") && map) {
-        const hi = createEyeHighlightMaterial(map);
-        mesh.renderOrder = 2;
-        return hi;
-      }
-      const basic = new THREE.MeshBasicMaterial({ map, name: m.name });
-      if (/Eyelash|Eyebrow/i.test(m.name)) {
-        basic.alphaTest = 0.5;
-        basic.transparent = false;
-      }
-      return basic;
-    };
-    mesh.material = Array.isArray(mesh.material) ? mesh.material.map(convert) : convert(mesh.material);
-  });
-}
-
 function restTop(model: THREE.Object3D): number {
   model.updateMatrixWorld(true);
   return new THREE.Box3().setFromObject(model, true).max.y;
@@ -76,10 +46,19 @@ export async function attachCastSwap(opts: {
   heightMode: CastHeightMode;
 }): Promise<CastSwap | null> {
   const gltf = await opts.loadGltf(opts.entry.glbUrl);
-  if (!gltf.scene.userData.__pjskPrepared) {
-    gltf.scene.userData.__pjskPrepared = true;
-    preparePjskMaterials(gltf.scene);
+  // Materials are shared by every clone of the model, so their per-model state (_FaceFront) is too.
+  const scene = gltf.scene as THREE.Object3D & { userData: { pjskShaders?: Promise<void>; pjskState?: PjskShaderState } };
+  if (!scene.userData.pjskShaders) {
+    const shaderState: PjskShaderState = { faceFront: new THREE.Vector3(0, 0, 1) };
+    scene.userData.pjskState = shaderState;
+    scene.userData.pjskShaders = preparePjskShaders(
+      scene,
+      (index) => gltf.parser.getDependency("texture", index),
+      shaderState
+    );
   }
+  await scene.userData.pjskShaders;
+  const shaderState = scene.userData.pjskState!;
   const model = SkeletonUtils.clone(gltf.scene);
   model.name = `pjsk_${opts.entry.id}`;
   const retarget = createPjskRetarget(opts.source, model);
@@ -90,6 +69,15 @@ export async function attachCastSwap(opts: {
   if (retarget.missing.length) console.info(`[castSwap] ${opts.entry.id}: unmapped bones`, retarget.missing);
   const face = createPjskFace(opts.source, model);
   const nativeTop = restTop(model);
+  // _FaceFront: the model's forward (+Z at rest) carried by the head bone
+  const head = model.getObjectByName("Head");
+  const headForward = new THREE.Vector3(0, 0, 1);
+  if (head) {
+    model.updateMatrixWorld(true);
+    const headRest = head.getWorldQuaternion(new THREE.Quaternion());
+    headForward.applyQuaternion(headRest.invert());
+  }
+  const headQ = new THREE.Quaternion();
 
   // The Hasu scene can be shared by two overlapping syncs of the same character, so the hidden
   // meshes are recorded on the scene and only the latest swap may show them again.
@@ -121,6 +109,11 @@ export async function attachCastSwap(opts: {
     update() {
       retarget.update();
       face?.();
+      if (head) {
+        model.updateMatrixWorld(true);
+        shaderState.faceFront.copy(headForward).applyQuaternion(head.getWorldQuaternion(headQ)).normalize();
+      }
+      setPjskShaderTime(performance.now() / 1000);
     },
     setHeightMode,
     detach() {

@@ -68,7 +68,7 @@ const DEPTH_FUNC = [
   THREE.GreaterEqualDepth,
   THREE.AlwaysDepth,
 ];
-const STENCIL_FUNC = [
+export const STENCIL_FUNC = [
   THREE.AlwaysStencilFunc, // Disabled
   THREE.NeverStencilFunc,
   THREE.LessStencilFunc,
@@ -79,7 +79,7 @@ const STENCIL_FUNC = [
   THREE.GreaterEqualStencilFunc,
   THREE.AlwaysStencilFunc,
 ];
-const STENCIL_OP = [
+export const STENCIL_OP = [
   THREE.KeepStencilOp,
   THREE.ZeroStencilOp,
   THREE.ReplaceStencilOp,
