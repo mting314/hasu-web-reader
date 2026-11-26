@@ -13,10 +13,11 @@ npm run cache-assets -- 10300101 10300102   # download each episode's assets int
 npm run dev                                  # http://localhost:5173/?story=103-ep1-part1&line=1
 ```
 
-`public/assets/` is not in git. `cache-assets` fetches the models, motions, backgrounds,
-voice and sound effects from the `llll-card` GCS bucket (BGM is copied from `../hasu-dub/bgm`
-when available). The per-costume toon material files
-(`public/assets/3d/costume/*/*_materials.json`) are generated from a raw game export with
+`public/assets/` is not in git. `cache-assets` downloads an episode's models (with their
+toon material files), motions, backgrounds, voice and sound effects from our asset bucket,
+`gs://hasu-web-reader-assets` (BGM is copied from `../hasu-dub/bgm` when available). Assets
+that aren't in the bucket yet must be exported from the raw game data and uploaded first;
+the material files (`public/assets/3d/costume/*/*_materials.json`) come from
 `scripts/export_toon_materials.py`.
 
 ## Regenerating scenario data
@@ -40,9 +41,10 @@ downloads JMdict into `data_cache/jmdict/` (~165 MB, git-ignored).
 
 ## Hosting assets on GCS
 
-Processed assets can be served from the `gs://hasu-web-reader-assets` bucket (project
-`future-name-201021`; public object reads, no listing, CORS for GET/HEAD) instead of
-`public/assets/`. Upload a cached folder with paths mirrored:
+Processed assets are stored in the `gs://hasu-web-reader-assets` bucket (project
+`future-name-201021`; private, CORS for GET/HEAD). Browsers will reach it through signed URLs
+from a small signing service (not built yet); until then the app reads `public/assets/`.
+Upload a cached folder with paths mirrored:
 
 ```sh
 scripts/upload_assets_gcs.sh 3d          # GLB/JSON stored gzip-encoded

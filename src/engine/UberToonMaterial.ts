@@ -338,8 +338,32 @@ export class ExpressionController {
 }
 
 /**
+ * Height of the model's `*_Hips` bone above its root in the rest pose. The first call caches it
+ * in `root.userData`, so call it on a costume before any animation moves the hips.
+ */
+export function restHipsHeight(root: THREE.Object3D): number | null {
+  const cached = root.userData.restHipsHeight;
+  if (typeof cached === "number") return cached;
+  const found: THREE.Object3D[] = [];
+  root.traverse((obj) => {
+    if (obj.name.endsWith("_Hips")) found.push(obj);
+  });
+  if (!found.length) return null;
+  root.updateWorldMatrix(true, true);
+  const height = root.worldToLocal(found[0].getWorldPosition(new THREE.Vector3())).y;
+  root.userData.restHipsHeight = height;
+  return height;
+}
+
+/**
  * Retargets skeletal animation tracks from a Link! Like! Love Live! motion GLB
  * onto a loaded character costume GLB hierarchy.
+ *
+ * Motions are baked on one reference rig (Kaho's). Bone rotations carry over by name; the hips
+ * translation is scaled by the ratio of rest hip heights, because the game solves each motion
+ * on the character's own Avatar and scales root motion by its body size. Without that, Kozue
+ * stands 10.5 cm too low (feet through the floor); with it, every character's hands, feet and
+ * head land within about 1 cm of a per-character solve.
  */
 export function retargetMotionClips(
   motionScene: THREE.Object3D,
@@ -376,6 +400,10 @@ export function retargetMotionClips(
   const motionShort = getShortPrefix(motionPrefix);
   const costumeShort = getShortPrefix(costumePrefix);
 
+  const motionHips = restHipsHeight(motionScene);
+  const costumeHips = restHipsHeight(costumeRoot);
+  const hipsScale = motionHips && costumeHips ? costumeHips / motionHips : 1;
+
   return animations.map((clip) => {
     const mappedTracks: THREE.KeyframeTrack[] = [];
     for (const track of clip.tracks) {
@@ -400,16 +428,21 @@ export function retargetMotionClips(
         mappedNode = costumeShort + nodeName.substring(motionShort.length);
       }
 
-      if (mappedNode && costumeBones.has(mappedNode)) {
-        const TrackCtor = track.constructor as new (
-          name: string,
-          times: ArrayLike<number>,
-          values: ArrayLike<number>
-        ) => THREE.KeyframeTrack;
-        mappedTracks.push(new TrackCtor(`${mappedNode}${propSuffix}`, track.times, track.values));
-      } else if (costumeBones.has(nodeName)) {
+      const target =
+        mappedNode && costumeBones.has(mappedNode) ? mappedNode : costumeBones.has(nodeName) ? nodeName : "";
+      if (!target) continue;
+      const scaleHips = hipsScale !== 1 && target.endsWith("_Hips") && propSuffix === ".position";
+      if (target === nodeName && !scaleHips) {
         mappedTracks.push(track);
+        continue;
       }
+      const TrackCtor = track.constructor as new (
+        name: string,
+        times: ArrayLike<number>,
+        values: ArrayLike<number>
+      ) => THREE.KeyframeTrack;
+      const values = scaleHips ? Float32Array.from(track.values, (v) => v * hipsScale) : track.values;
+      mappedTracks.push(new TrackCtor(`${target}${propSuffix}`, track.times, values));
     }
     return new THREE.AnimationClip(clip.name, clip.duration, mappedTracks);
   });

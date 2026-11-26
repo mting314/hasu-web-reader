@@ -30,7 +30,7 @@ export const APP_CREDITS: CreditSection[] = [
       {
         name: "hamproductions — リンク！ライク！ラブライブ！ エクスプローラー",
         detail:
-          "3D models, motions, expressions, backgrounds, voice clips, BGM and sound effects are loaded from the data this explorer publishes.",
+          "The 3D models, motions, expressions, backgrounds, voice clips, BGM and sound effects were originally exported from the data this explorer publishes, and its asset index maps story ids to files.",
         url: "https://hamproductions.github.io/llll/",
       },
     ],

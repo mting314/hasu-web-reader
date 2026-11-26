@@ -39,8 +39,17 @@ for rel in "$@"; do
   gcloud storage cp --recursive "$src" "$dest/" \
     --gzip-local=glb,json \
     --cache-control="$CACHE_CONTROL"
-  # Python's mimetypes (used by gcloud) doesn't know .glb
-  if gcloud storage ls "$BUCKET/$rel/**.glb" >/dev/null 2>&1; then
-    gcloud storage objects update "$BUCKET/$rel/**.glb" --content-type=model/gltf-binary >/dev/null
-  fi
+  # Python's mimetypes (used by gcloud) doesn't know .glb, and guesses video/webm for the
+  # voice/SE clips, which are audio-only Opus.
+  for ext_type in "glb:model/gltf-binary" "webm:audio/webm"; do
+    ext="${ext_type%%:*}"
+    ctype="${ext_type#*:}"
+    if [ -d "$src" ]; then
+      if gcloud storage ls "$BUCKET/$rel/**.$ext" >/dev/null 2>&1; then
+        gcloud storage objects update "$BUCKET/$rel/**.$ext" --content-type="$ctype" >/dev/null
+      fi
+    elif [ "${rel##*.}" = "$ext" ]; then
+      gcloud storage objects update "$BUCKET/$rel" --content-type="$ctype" >/dev/null
+    fi
+  done
 done

@@ -1,0 +1,19 @@
+[project]
+name = "hasu-web-reader-tools"
+version = "0.1.0"
+description = "Data and asset tooling for hasu-web-reader (scenario compiler, asset cache, Unity bundle exporters)"
+requires-python = ">=3.11"
+dependencies = [
+    "UnityPy==1.25.4", # reading the game's Unity asset bundles (data-inspect/ios-full)
+    "numpy>=2",        # curve decoding / pose math in the exporters
+]
+
+[dependency-groups]
+# Only needed to regenerate data_cache/wordfreq_ja.json (the cached table is committed).
+data = ["wordfreq>=3"]
+docs = [
+    "matplotlib>=3.11.2",
+]
+
+[tool.uv]
+package = false

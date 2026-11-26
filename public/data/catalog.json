@@ -42,7 +42,40 @@
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
-      ]
+      ],
+      "assetCounts": {
+        "characters": 2,
+        "backgrounds": 12,
+        "props": 3,
+        "motions": 101,
+        "bgm": 4,
+        "se": 7,
+        "voices": 95,
+        "total": 224
+      },
+      "castCharacters": [
+        {
+          "name": "花帆",
+          "nameEn": "Kaho",
+          "costumeId": "3d_costume_1001103101",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101_materials.json",
+          "expressionsUrl": "/assets/3d/animations/kaho_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103101/SCSch011Kah_Eye_highlightmain.png",
+          "firstTurnIndex": 0
+        },
+        {
+          "name": "さやか",
+          "nameEn": "Sayaka",
+          "costumeId": "3d_costume_1001103201",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201_materials.json",
+          "expressionsUrl": "/assets/3d/animations/sayaka_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103201/SCSch014Say_Eye_highlightmain.png",
+          "firstTurnIndex": 0
+        }
+      ],
+      "initialBackgroundUrl": "/assets/story/backgrounds/story_bg_image_049.webp"
     },
     {
       "slug": "103-ep1-part2",
@@ -77,7 +110,60 @@
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
-      ]
+      ],
+      "assetCounts": {
+        "characters": 4,
+        "backgrounds": 8,
+        "props": 5,
+        "motions": 93,
+        "bgm": 5,
+        "se": 9,
+        "voices": 107,
+        "total": 231
+      },
+      "castCharacters": [
+        {
+          "name": "梢",
+          "nameEn": "Kozue",
+          "costumeId": "3d_costume_1001102101",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001102101/3d_costume_1001102101.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001102101/3d_costume_1001102101_materials.json",
+          "expressionsUrl": "/assets/3d/animations/kozue_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001102101/SCSch012Koz_Eye_highlightmain.png",
+          "firstTurnIndex": 0
+        },
+        {
+          "name": "花帆",
+          "nameEn": "Kaho",
+          "costumeId": "3d_costume_1001103101",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001103101/3d_costume_1001103101_materials.json",
+          "expressionsUrl": "/assets/3d/animations/kaho_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103101/SCSch011Kah_Eye_highlightmain.png",
+          "firstTurnIndex": 0
+        },
+        {
+          "name": "さやか",
+          "nameEn": "Sayaka",
+          "costumeId": "3d_costume_1001103201",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001103201/3d_costume_1001103201_materials.json",
+          "expressionsUrl": "/assets/3d/animations/sayaka_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001103201/SCSch014Say_Eye_highlightmain.png",
+          "firstTurnIndex": 68
+        },
+        {
+          "name": "綴理",
+          "nameEn": "Tsuzuri",
+          "costumeId": "3d_costume_1001102201",
+          "glbUrl": "/assets/3d/costume/3d_costume_1001102201/3d_costume_1001102201.glb",
+          "materialsUrl": "/assets/3d/costume/3d_costume_1001102201/3d_costume_1001102201_materials.json",
+          "expressionsUrl": "/assets/3d/animations/tsuzuri_expressions.json",
+          "eyeHighlightUrl": "/assets/3d/costume/3d_costume_1001102201/SCSch013Tsu_Eye_highlightmain.png",
+          "firstTurnIndex": 85
+        }
+      ],
+      "initialBackgroundUrl": "/assets/story/backgrounds/story_bg_image_006.webp"
     }
   ]
 }

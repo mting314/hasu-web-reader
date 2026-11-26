@@ -24,10 +24,16 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { StageCanvas } from "./components/StageCanvas";
+import {
+  PreloadProgress,
+  prewarmEpisodeCast,
+  StageCanvas,
+  startTieredEpisodePreloader,
+} from "./components/StageCanvas";
 import { JapaneseLookupText } from "./components/JapaneseLookupText";
 import { CreditsPanel } from "./components/CreditsPanel";
 import { episodePartLabel, scriptIdFromSlug, slugForScriptId } from "./storySlug";
+import { rewriteAssetUrls } from "./remoteAssets";
 
 /** Story from the URL: `?story=103-ep1-part1`, or a legacy `?script=10300101` link. */
 function scriptIdFromUrl(): string | null {
@@ -141,6 +147,11 @@ export default function App() {
 
   // Typewriter text reveal state
   const [revealedChars, setRevealedChars] = useState(9999);
+  const [preloadProgress, setPreloadProgress] = useState<PreloadProgress>({
+    loaded: 0,
+    total: 0,
+    tier: "idle",
+  });
   const stageContainerRef = useRef<HTMLDivElement>(null);
   const activeRowRef = useRef<HTMLDivElement>(null);
 
@@ -157,7 +168,8 @@ export default function App() {
   useEffect(() => {
     fetch("/data/catalog.json")
       .then((r) => r.json())
-      .then((d: CatalogData) => {
+      .then((raw: CatalogData) => {
+        const d = rewriteAssetUrls(raw);
         setCatalog(d.episodes || []);
       })
       .catch((e) => console.error("Failed to load catalog.json:", e));
@@ -169,7 +181,8 @@ export default function App() {
     setAutoPlay(false);
     fetch(`/data/scenarios/${slugForScriptId(activeScriptId)}.json`)
       .then((r) => r.json())
-      .then((data: ScenarioData) => {
+      .then((raw: ScenarioData) => {
+        const data = rewriteAssetUrls(raw); // point /assets/* at GCS when configured
         setScenario(data);
         const availableIds = data.translationSources.map((s) => s.id);
         setSettings((prev) => ({
@@ -246,26 +259,20 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVisChange);
   }, [settings.pauseWhenHidden]);
 
-  // Cleista "Prefetch" behavior: warm upcoming voice & background assets
+  // Tiered Priority Preloader driven by compile-time scenario.assetManifest:
+  // Tier 1: Episode cast costumes (.glb + toon shaders + expressions), 2D backgrounds (.webp), 3D props (.glb)
+  // Tier 2: Immediate sliding lookahead window (N..N+8) for 3D motion clips (mot_*.glb), voices, BGM & SE
+  // Tier 3: Low-priority full-episode drain ordered from currentTurnIndex forward
   useEffect(() => {
-    if (!scenario || !currentTurn || settings.prefetchMode === "off") return;
-    const count =
-      settings.prefetchMode === "next1"
-        ? 1
-        : settings.prefetchMode === "next5"
-        ? 5
-        : Math.min(25, scenario.turns.length - currentTurn.index - 1);
-    const slice = scenario.turns.slice(currentTurn.index + 1, currentTurn.index + 1 + count);
-    for (const t of slice) {
-      if (t.voiceUrl) {
-        fetch(t.voiceUrl).catch(() => {});
-      }
-      if (t.stateBefore.background.url) {
-        const img = new Image();
-        img.src = t.stateBefore.background.url;
-      }
-    }
-  }, [scenario, currentTurn, settings.prefetchMode]);
+    if (!scenario) return;
+    return startTieredEpisodePreloader(
+      scenario,
+      currentTurnIndex,
+      settings.prefetchMode,
+      settings.enable3DStage,
+      setPreloadProgress
+    );
+  }, [scenario, currentTurnIndex, settings.prefetchMode, settings.enable3DStage]);
 
   const activeTranslation = useMemo(() => {
     if (!currentTurn) return { speaker: "", text: "" };
@@ -909,6 +916,16 @@ export default function App() {
                   <button
                     key={ep.scriptId}
                     type="button"
+                    onMouseEnter={() => {
+                      if (settings.enable3DStage && settings.prefetchMode !== "off") {
+                        prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
+                      }
+                    }}
+                    onFocus={() => {
+                      if (settings.enable3DStage && settings.prefetchMode !== "off") {
+                        prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
+                      }
+                    }}
                     onClick={() => {
                       setActiveScriptId(ep.scriptId);
                       setSidebarOpen(false);
@@ -1409,7 +1426,7 @@ export default function App() {
 
                   <div
                     className="flex items-center gap-2"
-                    title="How far ahead the reader warms upcoming voice + background assets."
+                    title="How far ahead the reader warms upcoming 3D models, motions, backgrounds, and voice/BGM/SE assets from the episode manifest."
                   >
                     <span className="text-slate-400">Prefetch:</span>
                     <select
@@ -1428,6 +1445,20 @@ export default function App() {
                       <option value="next5">Next 5</option>
                       <option value="all">All scenes</option>
                     </select>
+                    {preloadProgress.total > 0 && (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums ${
+                          preloadProgress.tier === "done"
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                            : "border-sky-500/30 bg-sky-500/10 text-sky-300"
+                        }`}
+                        title="Background preloader status from episode assetManifest"
+                      >
+                        {preloadProgress.tier === "done"
+                          ? `${preloadProgress.loaded}/${preloadProgress.total} ready`
+                          : `Warming ${preloadProgress.loaded}/${preloadProgress.total}`}
+                      </span>
+                    )}
                   </div>
 
                   <label className="inline-flex items-center gap-2 cursor-pointer">
