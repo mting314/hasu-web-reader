@@ -88,8 +88,6 @@ export function cueMemberFor(follow: number | null, onStage: Set<number>, hidden
   return shown.length === 1 ? shown[0] : null;
 }
 
-const flipSide = (s: string) => s.replace(/\b(left|right)\b/g, (m) => (m === "left" ? "right" : "left"));
-
 /** "a full turn", "1¼ turns" … from degrees. */
 function turnsText(deg: number): string {
   const q = Math.max(1, Math.round(Math.abs(deg) / 90));
@@ -116,9 +114,9 @@ export interface Cue {
 }
 
 /**
- * Cue wording for a move at time t. Left/right describe the figure as it appears on screen:
- * when the view is mirrored they swap (the mirrored figure visibly spins to her left), and the
- * detail line notes the original direction.
+ * Cue wording for a move at time t. The words always name the real move ("your right" is the
+ * dancer's right): with Mirror on you copy the screen like a studio mirror, which already puts
+ * you on the real side. Only the glyph follows the picture, so it matches the mirrored figure.
  */
 export function describeMove(e: MoveEvent, t: number, lead: number, mirror: boolean): Cue {
   const until = e.start - t;
@@ -128,25 +126,22 @@ export function describeMove(e: MoveEvent, t: number, lead: number, mirror: bool
   let glyph: string;
   if (e.kind === "walk") {
     const dir = e.direction ?? "";
-    const shown = mirror ? flipSide(dir) : dir;
     const m = Math.max(0.5, Math.round((e.distance ?? 0) * 2) / 2);
     const verb = e.relFacing === "backwards" ? "Back up" : e.relFacing === "sideways" ? "Side-step" : "Walk";
-    title = `${verb} ${shown} ${m} m`;
+    title = `${verb} ${dir} ${m} m`;
     const toward = [/downstage/.test(dir) ? "towards" : /upstage/.test(dir) ? "away from" : "", "the audience"];
     // stage left = the performer's left = the audience's right
-    const lr = /left/.test(shown) ? "right" : /right/.test(shown) ? "left" : "";
+    const lr = /left/.test(dir) ? "right" : /right/.test(dir) ? "left" : "";
     if (toward[0] && lr) notes.push(`${toward[0]} the audience, to its ${lr}`);
     else if (toward[0]) notes.push(toward.join(" "));
     else if (lr) notes.push(`to the audience's ${lr}`);
-    if (mirror && /left|right/.test(dir)) notes.push(`mirrored · really ${dir}`);
     glyph = "➜";
   } else {
     const side = (e.side ?? "right") as "left" | "right";
-    const shown = mirror ? (side === "left" ? "right" : "left") : side;
-    title = e.kind === "spin" ? `Spin to your ${shown}` : `Turn to your ${shown}`;
+    title = e.kind === "spin" ? `Spin to your ${side}` : `Turn to your ${side}`;
     notes.push(turnsText(e.degrees ?? 0));
-    if (mirror) notes.push(`mirrored · really to her ${side}`);
-    glyph = shown === "right" ? "↻" : "↺";
+    const onScreen = mirror ? (side === "left" ? "right" : "left") : side;
+    glyph = onScreen === "right" ? "↻" : "↺";
   }
   return { title, detail: notes.join(" · "), glyph, until, progress };
 }
