@@ -177,12 +177,10 @@ def cache_scripts(script_ids: list[str]) -> None:
     # 2. Costumes & Props (GLB + extraGlbs + textures + textureMap)
     for model_id in sorted(costumes | props):
         info = assets_by_id.get(model_id)
-        if not info and model_id in costumes:
-            # exported from the raw data by scripts/export_costume.py, same layout as the index
-            info = {"glbPath": f"costume/{model_id}/{model_id}.glb", "category": "costume"}
         if not info:
-            print(f"[WARN] Model ID {model_id} not found in model_viewer_context.json")
-            continue
+            # exported from the raw data by scripts/export_costume.py, same layout as the index
+            folder, category = ("costume", "costume") if model_id in costumes else ("ppadv", "ppadv")
+            info = {"glbPath": f"{folder}/{model_id}/{model_id}.glb", "category": category}
         glb_rel = f"3d/{info['glbPath']}"
         tasks.append((glb_rel, PUBLIC_ASSETS_DIR / glb_rel))
         if model_id in costumes and glb_rel.endswith(".glb"):
