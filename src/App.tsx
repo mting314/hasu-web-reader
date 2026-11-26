@@ -334,7 +334,8 @@ export default function App() {
       currentTurnIndex,
       settings.prefetchMode,
       settings.enable3DStage,
-      setPreloadProgress
+      setPreloadProgress,
+      (url) => AudioMixer.prefetchBgm(url)
     );
   }, [scenario, currentTurnIndex, settings.prefetchMode, settings.enable3DStage]);
 
@@ -474,7 +475,12 @@ export default function App() {
     }
 
     const snap = currentTurn.stateBefore;
-    AudioMixer.syncBgm(snap.audio.bgmUrl, snap.audio.bgmVolume, snap.audio.bgmLoop ?? null);
+    AudioMixer.syncBgm(
+      snap.audio.bgmUrl,
+      snap.audio.bgmVolume,
+      snap.audio.bgmLoop ?? null,
+      snap.audio.bgmFallbackUrl ?? null
+    );
     // Reading in order, beds the line's opening starts or stops are left to those SE commands
     // (scheduled at offset 0), which carry the script's fade times.
     const openingBeds =

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mmap
 import os
 import re
 import shutil
@@ -47,30 +48,36 @@ def referenced_bgm_ids() -> list[str]:
     return sorted(ids)
 
 
-def index_banks(banks: Path) -> tuple[list[tuple[Path, bytes]], list[tuple[Path, bytes]]]:
+def index_banks(banks: Path) -> tuple[list[Path], list[tuple[Path, bytes]]]:
+    """ACB paths (searched lazily, one file at a time) and each AWB's first 64 header bytes."""
     acbs, awbs = [], []
     for f in banks.rglob("*"):
         if not f.is_file():
             continue
         with open(f, "rb") as fh:
-            head = fh.read(4)
-        if head == b"@UTF":
-            acbs.append((f, f.read_bytes()))
-        elif head == b"AFS2":
-            with open(f, "rb") as fh:
-                awbs.append((f, fh.read(64)))
+            head = fh.read(64)
+        if head[:4] == b"@UTF":
+            acbs.append(f)
+        elif head[:4] == b"AFS2":
+            awbs.append((f, head))
     return acbs, awbs
 
 
-def find_acb(acbs: list[tuple[Path, bytes]], bgm_id: str) -> tuple[Path, bytes] | None:
-    """The ACB whose string table names the cue sheet `bgm_id` (null-terminated)."""
+def find_acb(acbs: list[Path], bgm_id: str) -> tuple[Path, bytes] | None:
+    """The smallest ACB whose string table names the cue sheet `bgm_id` (null-terminated)."""
     needle = b"\0" + bgm_id.encode() + b"\0"
-    hits = [(p, d) for p, d in acbs if needle in d]
-    return min(hits, key=lambda h: len(h[1])) if hits else None
+    best: tuple[Path, int] | None = None
+    for p in acbs:
+        with open(p, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            if mm.find(needle) >= 0 and (best is None or len(mm) < best[1]):
+                best = (p, len(mm))
+    return (best[0], best[0].read_bytes()) if best else None
 
 
 def find_awb(acb: bytes, awbs: list[tuple[Path, bytes]]) -> Path | None:
-    """The AWB whose header the ACB carries (StreamAwbAfs2Header); None if the waves are inside."""
+    """The AWB whose header the ACB carries (StreamAwbAfs2Header); None if the waves are inside.
+    A prefix match alone could pick the wrong bank, so export() also checks that vgmstream, which
+    names the AWB's waves from this ACB, reports the requested cue."""
     for m in re.finditer(rb"AFS2", acb):
         header = acb[m.start() : m.start() + 32]
         matches = [p for p, head in awbs if head[: len(header)] == header]
@@ -87,6 +94,11 @@ def vgmstream(js: Path, workdir: Path, inputs: list[Path], args: list[str]) -> s
 def meta_int(meta: str, key: str) -> int | None:
     m = re.search(rf"^{key}:\s*(\d+)", meta, re.M)
     return int(m.group(1)) if m else None
+
+
+def meta_name(meta: str) -> str:
+    m = re.search(r"^stream name:\s*(.+)$", meta, re.M)
+    return m.group(1).strip() if m else ""
 
 
 def export(bgm_id: str, acbs, awbs, js: Path) -> dict | None:
@@ -108,18 +120,33 @@ def export(bgm_id: str, acbs, awbs, js: Path) -> dict | None:
             inputs.append(work / f"{bgm_id}.awb")
             shutil.copyfile(awb_path, inputs[1])
         target = inputs[-1].name  # vgmstream reads a stream bank's cue names from the ACB next to it
+        # A bank can hold several waves (subsongs): pick the one vgmstream names after this cue.
         meta = vgmstream(js, work, inputs, ["-m", target])
+        subsong = None
+        if meta_name(meta) != bgm_id:
+            for i in range(1, (meta_int(meta, "stream count") or 1) + 1):
+                meta = vgmstream(js, work, inputs, ["-m", "-s", str(i), target])
+                if meta_name(meta) == bgm_id:
+                    subsong = i
+                    break
+            else:
+                print(f"[skip] {bgm_id}: no wave in {acb_path.name} is named after the cue "
+                      f"(wrong AWB pairing?)")
+                return None
+        select = ["-s", str(subsong)] if subsong else []
         rate, samples = meta_int(meta, "sample rate"), meta_int(meta, "stream total samples")
         loop_start, loop_end = meta_int(meta, "loop start"), meta_int(meta, "loop end")
         # -i: the whole stream once, no loop repeats or fade (the player loops it)
-        vgmstream(js, work, inputs, ["-i", "-o", f"{bgm_id}.wav", target])
-        OUT_DIR.mkdir(parents=True, exist_ok=True)
-        out = OUT_DIR / f"{bgm_id}.webm"
+        vgmstream(js, work, inputs, ["-i", *select, "-o", f"{bgm_id}.wav", target])
+        encoded = work / f"{bgm_id}.webm"
         subprocess.run(
             ["ffmpeg", "-v", "error", "-y", "-i", str(work / f"{bgm_id}.wav"),
-             "-c:a", "libopus", "-b:a", "192k", str(out)],
+             "-c:a", "libopus", "-b:a", "192k", str(encoded)],
             check=True,
         )
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        out = OUT_DIR / f"{bgm_id}.webm"
+        shutil.move(encoded, out)  # only replace the old file once the export has succeeded
     loop = f"loop {loop_start}..{loop_end}" if loop_start is not None else "no loop"
     print(f"{bgm_id}: {acb_path.name}{' + ' + awb_path.name if awb_path else ''}, "
           f"{samples} samples @ {rate} Hz, {loop} -> {os.path.relpath(out, ROOT)}")
@@ -137,12 +164,20 @@ def main() -> None:
     acbs, awbs = index_banks(args.banks)
     print(f"{len(acbs)} ACB, {len(awbs)} AWB banks in {args.banks}")
     loops = json.loads(LOOPS_JSON.read_text(encoding="utf-8")) if LOOPS_JSON.exists() else {}
+    failed = []
     for bgm_id in ids:
-        info = export(bgm_id, acbs, awbs, args.vgmstream)
+        try:
+            info = export(bgm_id, acbs, awbs, args.vgmstream)
+        except subprocess.CalledProcessError as e:
+            print(f"[fail] {bgm_id}: {' '.join(map(str, e.cmd[:3]))}… exited {e.returncode}: "
+                  f"{(e.stderr or '').strip()[-300:]}")
+            failed.append(bgm_id)
+            continue
         if info:
             loops[bgm_id] = info
-    LOOPS_JSON.write_text(json.dumps(dict(sorted(loops.items())), indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {LOOPS_JSON.relative_to(ROOT)}")
+            # written after every track, so the loop data always matches the audio on disk
+            LOOPS_JSON.write_text(json.dumps(dict(sorted(loops.items())), indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {LOOPS_JSON.relative_to(ROOT)}" + (f"; failed: {', '.join(failed)}" if failed else ""))
 
 
 if __name__ == "__main__":

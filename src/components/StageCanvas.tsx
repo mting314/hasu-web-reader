@@ -287,7 +287,9 @@ export function startTieredEpisodePreloader(
   anchorTurnIndex: number,
   mode: PrefetchMode,
   enable3D: boolean,
-  onProgress?: (progress: PreloadProgress) => void
+  onProgress?: (progress: PreloadProgress) => void,
+  /** decodes an upcoming BGM ahead of its cue (AudioMixer.prefetchBgm) */
+  prefetchBgm: (url: string) => Promise<void> = prewarmAudioAsync
 ): () => void {
   const manifest: AssetManifest | undefined = scenario.assetManifest;
   if (!manifest || mode === "off") {
@@ -393,7 +395,7 @@ export function startTieredEpisodePreloader(
   }
   for (const b of manifest.audio.bgm) {
     if (b.firstTurnIndex >= anchorTurnIndex && b.firstTurnIndex <= maxLookaheadIdx) {
-      enqueue(`bgm:${b.url}`, "lookahead", () => prewarmAudioAsync(b.url));
+      enqueue(`bgm:${b.url}`, "lookahead", () => prefetchBgm(b.url));
     }
   }
   for (const s of manifest.audio.se) {
@@ -412,7 +414,7 @@ export function startTieredEpisodePreloader(
     }
     if (t.stateBefore.audio.bgmUrl) {
       const bUrl = t.stateBefore.audio.bgmUrl;
-      enqueue(`bgm:${bUrl}`, "lookahead", () => prewarmAudioAsync(bUrl));
+      enqueue(`bgm:${bUrl}`, "lookahead", () => prefetchBgm(bUrl));
     }
     if (enable3D) {
       for (const c of Object.values(t.stateBefore.characters)) {
@@ -1556,7 +1558,13 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           break;
         case "bgm_play":
         case "bgm_stop":
-          if (ev.audio) audioMixer.syncBgm(ev.audio.bgmUrl, ev.audio.bgmVolume, ev.audio.bgmLoop ?? null);
+          if (ev.audio)
+            audioMixer.syncBgm(
+              ev.audio.bgmUrl,
+              ev.audio.bgmVolume,
+              ev.audio.bgmLoop ?? null,
+              ev.audio.bgmFallbackUrl ?? null
+            );
           break;
         case "se_play":
           if (!ev.seUrl) break;

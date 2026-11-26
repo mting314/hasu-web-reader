@@ -206,6 +206,8 @@ export interface AudioState {
   bgmVolume: number;
   /** The track's loop region [start, end] in seconds, from the game's wave (absent: whole file) */
   bgmLoop?: [number, number] | null;
+  /** The older MP3 of the same track, for browsers that can't decode the .webm */
+  bgmFallbackUrl?: string | null;
   /** Looping ambience beds active at this point of the script */
   ambience: AmbienceBed[];
 }

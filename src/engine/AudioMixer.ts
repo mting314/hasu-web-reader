@@ -45,6 +45,13 @@ const SEGMENT_TICK_MS = 25;
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
+/** Decoded BGM kept in memory: the current track plus one prefetched (~35 MB each). */
+const BGM_BUFFER_CACHE = 2;
+
+const audioContextCtor = (): typeof AudioContext | undefined =>
+  window.AudioContext ||
+  (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
 export class AudioMixer {
   public masterVolume = 0.85;
   public bgmVolume = 0.45;
@@ -77,7 +84,11 @@ export class AudioMixer {
   private bgmFallback = false;
   private bgmLoop: BgmLoop | null = null;
   private bgmLoopPoints: [number, number] | null = null;
+  /** what <audio> plays if Web Audio can't (the older MP3: browsers without Opus) */
+  private bgmFallbackUrl: string | null = null;
+  /** decoded tracks, least recently used first */
   private bgmBuffers = new Map<string, Promise<AudioBuffer | null>>();
+  private ctxFailed = false;
   /** bumped on every track change so a late decode never starts an old track */
   private bgmToken = 0;
   private currentBgmUrl: string | null = null;
@@ -142,9 +153,7 @@ export class AudioMixer {
 
   private ensureContext() {
     if (!this.ctx) {
-      const Ctx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const Ctx = audioContextCtor();
       if (!Ctx) return;
       try {
         const ctx = new Ctx();
@@ -167,6 +176,8 @@ export class AudioMixer {
         this.ctx = null;
         this.analyser = null;
         this.voiceGain = null;
+        this.ctxFailed = true;
+        if (this.currentBgmUrl && !this.bgmFallback) this.attachBgm(this.bgmToken);
       }
     }
     if (this.ctx && this.ctx.state === "suspended") {
@@ -383,7 +394,12 @@ export class AudioMixer {
     pausedAt: number;
   } | null = null;
 
-  public syncBgm(url: string | null, scriptVolume = 1.0, loop: [number, number] | null = null) {
+  public syncBgm(
+    url: string | null,
+    scriptVolume = 1.0,
+    loop: [number, number] | null = null,
+    fallbackUrl: string | null = null
+  ) {
     this.scriptBgmVol = scriptVolume;
     this.applyVolumes();
     if (url === this.currentBgmUrl) {
@@ -393,6 +409,7 @@ export class AudioMixer {
     this.detachBgm();
     this.currentBgmUrl = url;
     this.bgmLoopPoints = loop;
+    this.bgmFallbackUrl = fallbackUrl;
     this.bgmUserPaused = false;
     if (url) this.attachBgm(this.bgmToken);
   }
@@ -402,7 +419,44 @@ export class AudioMixer {
     this.bgmLoop?.destroy();
     this.bgmLoop = null;
     this.bgmAudio.pause();
+    this.bgmAudio.removeAttribute("src");
     this.bgmFallback = false;
+  }
+
+  /** Fetch and decode a track into the small LRU cache (shared by playback and prefetch). */
+  private decodeBgm(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
+    let buffer = this.bgmBuffers.get(url);
+    if (buffer) {
+      this.bgmBuffers.delete(url); // re-insert as most recently used
+    } else {
+      buffer = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then((data) => ctx.decodeAudioData(data))
+        .catch((e) => {
+          console.warn(`[AudioMixer] BGM decode failed, falling back to <audio loop>: ${url}`, e);
+          this.bgmBuffers.delete(url);
+          return null;
+        });
+    }
+    this.bgmBuffers.set(url, buffer);
+    for (const key of this.bgmBuffers.keys()) {
+      if (this.bgmBuffers.size <= BGM_BUFFER_CACHE) break;
+      if (key !== this.currentBgmUrl && key !== url) this.bgmBuffers.delete(key);
+    }
+    return buffer;
+  }
+
+  /** Decode an upcoming track ahead of its cue (the preloader's lookahead); before the first user
+   * gesture there's no AudioContext yet, so only the HTTP cache is warmed. */
+  public prefetchBgm(url: string): Promise<void> {
+    if (this.ctx) return this.decodeBgm(this.ctx, url).then(() => {});
+    return fetch(url, { cache: "force-cache" })
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then(() => {})
+      .catch(() => {});
   }
 
   /** Decode the current track and start its loop (once there's an AudioContext, i.e. after the
@@ -412,28 +466,13 @@ export class AudioMixer {
     const ctx = this.ctx;
     if (!url) return;
     if (!ctx) {
-      if (!this.canUseWebAudio()) this.useBgmFallback(url);
+      if (!audioContextCtor() || this.ctxFailed) this.useBgmFallback();
       return;
     }
-    let buffer = this.bgmBuffers.get(url);
-    if (!buffer) {
-      buffer = fetch(url)
-        .then((r) => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.arrayBuffer();
-        })
-        .then((data) => ctx.decodeAudioData(data))
-        .catch((e) => {
-          console.warn(`[AudioMixer] BGM decode failed, falling back to <audio loop>: ${url}`, e);
-          return null;
-        });
-      this.bgmBuffers.set(url, buffer);
-    }
-    buffer.then((buf) => {
+    this.decodeBgm(ctx, url).then((buf) => {
       if (token !== this.bgmToken) return;
       if (!buf) {
-        this.bgmBuffers.delete(url);
-        this.useBgmFallback(url);
+        this.useBgmFallback();
         return;
       }
       this.bgmLoop = new BgmLoop(ctx, ctx.destination, buf, this.bgmLoopPoints);
@@ -442,15 +481,9 @@ export class AudioMixer {
     });
   }
 
-  private canUseWebAudio() {
-    return Boolean(
-      window.AudioContext || (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext
-    );
-  }
-
-  private useBgmFallback(url: string) {
+  private useBgmFallback() {
     this.bgmFallback = true;
-    this.bgmAudio.src = url;
+    this.bgmAudio.src = this.bgmFallbackUrl ?? this.currentBgmUrl ?? "";
     this.bgmAudio.currentTime = 0;
     this.applyVolumes();
     if (!this.bgmUserPaused && !this.hiddenPausedState) this.bgmAudio.play().catch(() => {});
@@ -459,6 +492,7 @@ export class AudioMixer {
   private startBgm() {
     if (this.bgmLoop) this.bgmLoop.play();
     else if (this.bgmFallback && this.bgmAudio.paused) this.bgmAudio.play().catch(() => {});
+    // pending: attachBgm starts it when the decode lands, unless paused by then
   }
 
   private pauseBgm() {
@@ -469,7 +503,8 @@ export class AudioMixer {
   public isBgmPlaying(): boolean {
     if (!this.currentBgmUrl) return false;
     if (this.bgmLoop) return !this.bgmLoop.paused;
-    return this.bgmFallback && !this.bgmAudio.paused;
+    if (this.bgmFallback) return !this.bgmAudio.paused;
+    return !this.bgmUserPaused && !this.hiddenPausedState; // pending: what will happen on decode
   }
 
   public toggleBgmPlayPause(): boolean {
@@ -486,6 +521,7 @@ export class AudioMixer {
 
   public getBgmTime(): { currentTime: number; duration: number } {
     if (this.bgmLoop) return { currentTime: this.bgmLoop.currentTime, duration: this.bgmLoop.duration };
+    if (!this.bgmFallback) return { currentTime: 0, duration: 0 };
     const dur = Number.isFinite(this.bgmAudio.duration) ? this.bgmAudio.duration : 0;
     const cur = Number.isFinite(this.bgmAudio.currentTime) ? this.bgmAudio.currentTime : 0;
     return { currentTime: cur, duration: dur };
@@ -496,7 +532,7 @@ export class AudioMixer {
       this.bgmLoop.currentTime = Math.max(0, Math.min(this.bgmLoop.duration, timeSec));
       return;
     }
-    if (!this.currentBgmUrl || !Number.isFinite(this.bgmAudio.duration)) return;
+    if (!this.bgmFallback || !Number.isFinite(this.bgmAudio.duration)) return;
     try {
       this.bgmAudio.currentTime = Math.max(0, Math.min(this.bgmAudio.duration, timeSec));
     } catch {
