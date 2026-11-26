@@ -42,6 +42,7 @@ warnings.filterwarnings("ignore", module="UnityPy")
 
 ROOT = Path(__file__).resolve().parent.parent
 GLES3 = 9  # ShaderCompilerPlatform.GLES3x
+GPU_PROGRAM_GLES3 = 4  # ShaderGpuProgramType.GLES3 (25 = SPIRV)
 VARIANTS = {
     # output name -> (shader, pass, keywords)
     "TOON": ("Hidden/Sekai/Live/Character/Toon-v3", "Base", {"_LAMBERT"}),
@@ -109,6 +110,10 @@ def find_variant(pf: dict, blob: ShaderBlob, pass_name: str, keywords: set[str])
             continue
         for tier in p["progVertex"]["m_PlayerSubPrograms"]:
             for s in tier:
+                # GLES3 programs only (the list also holds the SPIR-V ones, type 25, whose blob
+                # indices point into the Vulkan blob)
+                if s["m_GpuProgramType"] != GPU_PROGRAM_GLES3:
+                    continue
                 if {names[k] for k in s["m_KeywordIndices"]} == keywords:
                     return blob.text(s["m_BlobIndex"])
     raise SystemExit(f"{pf['m_Name']}: no {pass_name} variant {sorted(keywords)}")
