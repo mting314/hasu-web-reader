@@ -15,7 +15,29 @@ const KEY = "hasu-reader.pjskCast";
 const listeners = new Set<() => void>();
 let state: CastState = load();
 
+/** `?cast=1031:01ichika,1032:11akito&castHeight=pjsk` sets the cast (and is saved), for shareable links. */
+function fromUrl(): CastState | null {
+  const params = new URLSearchParams(window.location.search);
+  const spec = params.get("cast");
+  if (spec === null) return null;
+  const cast: Record<string, string> = {};
+  for (const pair of spec.split(",")) {
+    const [id, model] = pair.split(":");
+    if (id && model) cast[id] = model;
+  }
+  return { cast, heightMode: params.get("castHeight") === "pjsk" ? "pjsk" : "replaced" };
+}
+
 function load(): CastState {
+  const linked = fromUrl();
+  if (linked) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(linked));
+    } catch {
+      // storage disabled: the link still applies for this visit
+    }
+    return linked;
+  }
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
     if (raw && typeof raw === "object" && raw.cast && typeof raw.cast === "object") {
