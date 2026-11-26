@@ -366,7 +366,13 @@ export class AudioMixer {
   // -------------------------------------------------------------------------
 
   private bgmUserPaused = false;
-  private hiddenPausedState: { voice: boolean; bgm: boolean; seIds: string[] } | null = null;
+  private hiddenPausedState: {
+    voice: boolean;
+    bgm: boolean;
+    seIds: string[];
+    oneShotTracks: SeTrack[];
+    pausedAt: number;
+  } | null = null;
 
   public syncBgm(url: string | null, scriptVolume = 1.0) {
     this.scriptBgmVol = scriptVolume;
@@ -427,6 +433,7 @@ export class AudioMixer {
     const voiceWasPlaying = this.isVoicePlaying();
     const bgmWasPlaying = this.isBgmPlaying();
     const activeSeIds: string[] = [];
+    const oneShotTracks: SeTrack[] = [];
     if (voiceWasPlaying) this.voiceAudio.pause();
     if (bgmWasPlaying) this.bgmAudio.pause();
     for (const [id, t] of this.ambience.entries()) {
@@ -435,13 +442,31 @@ export class AudioMixer {
         activeSeIds.push(id);
       }
     }
-    this.hiddenPausedState = { voice: voiceWasPlaying, bgm: bgmWasPlaying, seIds: activeSeIds };
+    for (const t of this.tracks) {
+      if (t.kind === "oneshot" && !t.el.paused && !t.el.ended) {
+        t.el.pause();
+        oneShotTracks.push(t);
+      }
+    }
+    this.hiddenPausedState = {
+      voice: voiceWasPlaying,
+      bgm: bgmWasPlaying,
+      seIds: activeSeIds,
+      oneShotTracks,
+      pausedAt: performance.now(),
+    };
   }
 
   public resumeFromHiddenTab() {
     if (!this.hiddenPausedState) return;
     const st = this.hiddenPausedState;
     this.hiddenPausedState = null;
+    const pausedMs = Math.max(0, performance.now() - st.pausedAt);
+    for (const t of this.tracks) {
+      if (t.fade) {
+        t.fade.start += pausedMs;
+      }
+    }
     if (st.voice && this.currentVoiceUrl) {
       this.voiceAudio.play().catch(() => {});
     }
@@ -451,6 +476,11 @@ export class AudioMixer {
     for (const id of st.seIds) {
       const t = this.ambience.get(id);
       if (t && t.el.paused) t.el.play().catch(() => {});
+    }
+    for (const t of st.oneShotTracks) {
+      if (this.tracks.has(t) && t.el.paused && !t.el.ended) {
+        t.el.play().catch(() => {});
+      }
     }
   }
 

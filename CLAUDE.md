@@ -63,7 +63,7 @@ setup). This file records what we've learned about how the game's assets work.
 which also runs ll-bot/ll-predictions; a dedicated project couldn't be created because the
 account hit Google's project quota). **Private since 2026-11-25**: no public reads (the
 `allUsers` binding was removed), so plain `storage.googleapis.com` URLs return 403 and
-`npm run cache-assets` (which downloads anonymously) needs to switch to authenticated
+`npm run cache-assets` (`scripts/cache_episode_assets.py`) uses authenticated
 `gcloud storage cp`. The deployed site (GitHub Pages, `mting314.github.io/hasu-web-reader`)
 is meant to get short-lived signed URLs from a small Cloud Run signing service; that service
 isn't built yet, so local dev reads `public/assets/`. CORS GET/HEAD from `*` is still set.
@@ -173,11 +173,15 @@ for a skinned mesh is its root bone. **The project renders in Gamma space**
 (`PlayerSettings.m_ActiveColorSpace = 0` in the APK's data): textures are sampled raw and colours
 used as stored, with no output encoding. The story light is the APK scene's directional light
 (level9, `StoryScene.directionalLight`): colour (1, 1, 1), intensity 1, rotation (0, 0, 0), i.e.
-from the camera side; `[ライト回転]` / `[ライト光源色変更]` change it (not built yet). Characters
+from the camera side; `[ライト回転]` (`LightRotateCommand`, RVA 0x413A884) and `[ライト光源色変更]`
+(`LightColorCommand`, RVA 0x413A5F8, `StoryDefine.ConvertColor`, RVA 0x41506E8) update it per line
+(`scripts/build_scenarios.py`, `src/components/StageCanvas.tsx`). Characters
 are layer 21, drawn by the story renderer's `CustomRenderObjects` feature after opaques with
 `[UniversalForward, Outline, SRPDefaultUnlit]`, so each outline follows its own lit pass; MSAA is
-2× (`_AlphaToMaskAvailable` = 1). The eye shader (`Character/ToonShader_CharacterEye`) isn't
-ported yet (unlit stand-in).
+2× (`_AlphaToMaskAvailable` = 1). The eye shader (`Character/ToonShader_CharacterEye`,
+`__toonshader_charactereye.shader`) is converted by `scripts/msl_to_glsl.py` into `EYE_VERT` /
+`EYE_FRAG` in `src/engine/shaders/uberToonGame.ts` and wired via `createGameEyeMaterial` in
+`src/engine/gameToonMaterial.ts`.
 
 **Motions.** A motion GLB has the skeleton plus clips `m_00_NNNNN@i/@a/@l/@o` (in, action,
 loop, out; one motion, `mot_00_00040`, names them `@r@i` etc.), `m_breathing@l` and hand grip
@@ -383,12 +387,28 @@ lip-sync on `Mouth_A…O`, plus an A/B mode (`Mouth_A`, `LipWeights [0, 40, 70]`
 
 ### Look-at (`Tecotec.CharaLookCommand`, `ModelHandler.OnIKPass`)
 
-Unity's own humanoid look-at: in `OnAnimatorIK` the game calls
-`Animator.SetLookAtWeight(weight, body, head, eyes, clamp)` with the model's `SightWeightSettings`
-and `SetLookAtPosition(Lerp(last, target, ratio))`. Looking at a character or a point uses all
-the weights. Looking by angle/direction sets body and head weight to 0, so **only the eyes
-move**. In three.js, reproduce this with a look-at on the head/eye bones that honours those
-weights (e.g. three-vrm's `VRMLookAt`), not a custom IK solver.
+Unity's own humanoid look-at, ported in `src/engine/storyLookAt.ts`:
+- `SightWeightSettings` lives on the shared `ModelHolder` prefab in `data-inspect/apk/data.unity3d`
+  (`resources.assets`, `GameObject` `"ModelHolder"` `path_id=35845`, `MonoBehaviour` `path_id=125774`):
+  `weight = 0.5`, `bodyWeight = 0.1`, `headWeight = 0.25`, `eyesWeight = 0.25`, `clampWeight = 0.5`.
+- `ModelHandler.OnCostumeLoaded` (RVA 0x497B62C) caches `eye = bodyAnimator.GetBoneTransform(HumanBodyBones.LeftEye)`
+  (`<Chr>DeA_LEye`); `DistanceToEye` (RVA 0x497B1F0) is `eye.position.y - transform.position.y`.
+- `CalculateLookAtPostionByAngle(degree)` (RVA 0x497BF48) returns
+  `transform.position + Quaternion.AngleAxis(degree, Vector3.up) * transform.forward + (0, DistanceToEye, 0)`.
+- `CharaLookCommand.DoExecute` (RVA 0x4132B3C):
+  - `"キャラ指定"`: targets the named character's `EyeBoneTransform` (`<Chr>DeA_LEye`) over optional `duration`.
+  - `"座標指定"`: targets the given world `Vector3` over optional `duration`.
+  - `"角度指定"`: calls `SetLookAtAngle(degree, !skip)`.
+  - `"向き指定"`: calls `SetLookAtAngle(ratio * LookAtMaxAngle, !skip)` (`LookAtMaxAngle = 90°`).
+  - Anything else: resets `SetLookAtTarget(null, !skip, duration)`.
+- `ModelHandler.OnIKPass` (RVA 0x497E97C):
+  - When `LookAtTarget == null` (angle/direction mode): calls
+    `Animator.SetLookAtWeight(0.5, 0, 0, 0.25, 0.5)` (**only the eyes move**) toward `LookAtPositionByAngle`.
+  - When `LookAtTarget != null` (character or position mode): calls
+    `Animator.SetLookAtWeight(0.5, 0.1, 0.25, 0.25, 0.5)` (**spine, neck/head, and eyes move**) and
+    `SetLookAtPosition(Lerp(lastLookAtPosition, setLookAtPosition, lookAtRatioForTarget))`.
+- In `StageCanvas.tsx`, `char.lookAt.restore()` runs before `updateStoryMotion(char, dt)`, and
+  `char.lookAt.apply(dt)` runs after `updateStoryMotion(char, dt)` and before `char.copyFaceBones?.()`.
 
 ### Live-stream motion packets (`alst`, `Inspix.CharacterMotion`)
 
@@ -415,11 +435,42 @@ weights (e.g. three-vrm's `VRMLookAt`), not a custom IK solver.
   i.e. the same muscle space our `HumanoidBaker` solves. Sub-bones are written straight to the
   `SubBoneReference.moveSubBones` / `rotateSubBones` transforms.
 
+## Inspecting the reference reader (Cleista, `pjsk.cleista.cc`)
+
+Cleista (`https://pjsk.cleista.cc`) is the reference web story reader for UI/UX behaviour (stage
+loading gates, fullscreen layout, pause-on-hide/scroll, line-list scrolling, controls).
+
+### Local mirror & safe inspection rules
+
+- **Local mirror in `/tmp/cleista/`**:
+  - `/tmp/cleista/src/`: ~900 unbundled ES modules mirroring `https://pjsk.cleista.cc/v/<hash>/js/…`.
+  - `/tmp/cleista/index.html`: entry HTML with the `#stage*` DOM skeleton and `<link rel="stylesheet">` URLs.
+  - `/tmp/cleista/css/`: stylesheets (`reader-layout.css`, `reader-stage-hud.css`, `reader-controls.css`, `base.css`).
+- **How to examine Cleista without hanging**:
+  1. **Use the local copy in `/tmp/cleista/` first; never crawl or download in a loop.**
+  2. **If a missing file must be fetched from `pjsk.cleista.cc`**, run a single `curl` with a
+     browser User-Agent and a hard timeout:
+     `curl -s --max-time 20 -A "Mozilla/5.0 Chrome/158" <url>`
+     (Python's default `urllib` User-Agent gets an HTTP 403 from Cloudflare, and unbounded network
+     fetches can hang background agents).
+  3. **Grep first, then read targeted line ranges.** `reader/index.js` is ~3,900 lines; find the
+     function or event listener with `grep -rn` across `/tmp/cleista/src/reader/` and read only the
+     80–150 lines around the match.
+
+### Cleista module map
+
+| Area | Cleista files (`/tmp/cleista/src/` & `css/`) | Key symbols & behaviour |
+| --- | --- | --- |
+| Stage DOM skeleton | `reader/stage-template.js`, `index.html` | `.reader-stage` (`container-type: size; container-name: reader-stage`), `#stageFullcolor` (initial black cover, 1.0 s opacity fade), `#stageLoader` (centered spinner), `#stageJpLoading` (top-center loading pill), `#stagePrev` / `#stageNext` (`.stage-nav-btn`, fullscreen-only), `#stageSettingsPanel` (on-stage settings popover), `#dialogueOverlay` |
+| Initial load & per-line asset gate | `reader/step-assets.js`, `reader/crash-guard.js`, `reader/index.js` | `warmStepAssets()` holds `runBeat()` (voice, typewriter, timed events) until stage assets settle (`FIRST_PAINT_WARM_TIMEOUT_MS = 15000`, `WARM_GATE_TIMEOUT_MS = 5000`). `#stageJpLoading` uses an 80 ms show grace timer and 200 ms hide debounce. While `storyLoading`, transport controls and keyboard/stage advance are blocked (`syncLineChrome()`), and `#dialogueOverlay` is hidden before first paint or while seeking to an unready line. |
+| Script list & transport chrome | `reader/line-chrome.js` | `syncLineChrome()` sets `prevBtn.disabled` / `nextBtn.disabled` / `stagePrev.disabled` / `stageNext.disabled` from `storyLoading` + line index bounds, and scrolls `.line-list` minimally so the active `.line-item` stays in view without scrolling `window`. |
+| Fullscreen & subtitle scaling | `reader/dialogue-layout.js`, `reader/index.js`, `css/reader-stage-hud.css`, `css/reader-layout.css` | Fullscreens `.reader-stage` via `requestFullscreen()` / `webkitRequestFullscreen()`, falling back to `.is-fake-fullscreen` (`position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 1000`). Subtitles stay anchored at the bottom (`inset: auto 0 0 0; padding: 2.5rem 7% 5%`) with no max-width cap (`width: 100%; max-width: none; grid-template-columns: 1fr 1fr; gap: 4.2cqmin`) and scale proportionally via `cqmin` (`font-size: clamp(..., 3cqmin, 42px)`). |
+| Pause when hidden / scrolled away | `reader/index.js`, `live2d.js`, `global-audio.js`, `reader/effect-clock.js`, `reader/auto-advance.js`, `reader/auto-resume.js`, `reader/freeze-probe.js` | `visibilitychange` (gated by `pauseWhenHidden`), overlay open state, and an `IntersectionObserver` (`threshold: [0, 0.05, 0.25]`) on the stage container pause audio, stop the 3D/Live2D `requestAnimationFrame` loop, freeze the virtual effect clock, pause CSS/WAAPI fade animations and mid-line timers, and discard the paused delta on wake so animations resume without a `dt` catch-up jump. |
+| UI strings | `i18n/catalog/en.js` (and other locales) | `stageLoadingStory` (`"Loading {0}…"`), `stageLoadingLineAsset` (`"Loading line {0}/{1} · {2}…"`), button tooltips and aria labels. |
+
 ## Known gaps (episode 1)
 
 The build prints referenced assets that aren't in the store. Currently unavailable or wrong:
-- no look-at yet (`キャラ視線変更` is a no-op), the eye shader is a stand-in, and the light
-  commands aren't built
 - only the four episode-1 costumes are re-exported with `scripts/export_costume.py`; the bucket
   still has the old ones
 - the reader starts at the first line, so a motion played during an episode's opening fade-in

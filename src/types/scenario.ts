@@ -131,7 +131,8 @@ export interface CharacterState {
   motionNormalizedTime?: number | null;
   lookAt: {
     mode: string;
-    value: number | [number, number, number];
+    value: number | [number, number, number] | string;
+    duration?: number;
   };
   blush: number;
   /** fade seconds of the [顔紅潮操作] that set `blush` (0 = the 0.1 s minimum) */

@@ -13,6 +13,7 @@ import { isGameCostume, prepareGameCostume, setToonLighting } from "../engine/ga
 import { createFaceBonesCopier } from "../engine/faceBonesCopier";
 import { EmotionData, StoryEmotion } from "../engine/storyEmotion";
 import { FaceFlush } from "../engine/faceFlush";
+import { StoryLookAt } from "../engine/storyLookAt";
 import { AudioMixer } from "../engine/AudioMixer";
 import {
   DEFAULT_BREATHING_WEIGHT,
@@ -37,16 +38,25 @@ import {
   StageSnapshot,
 } from "../types/scenario";
 
+export interface StageLoadProgress {
+  done: number;
+  total: number;
+  assetName: string;
+}
+
 interface StageCanvasProps {
   turn: DialogueTurn;
   cameraMode: "adv" | "orbit";
   enable3D: boolean;
   resolution?: StageResolution;
+  paused?: boolean;
   audioMixer: AudioMixer;
   onAdvance: () => void;
   /** Called with the turn once that line's stage assets (background, cast, their motions,
    * props) have loaded or failed: the reader holds the line until then. */
   onStageReady?: (turn: DialogueTurn) => void;
+  /** Reports per-line asset loading progress for Cleista's top-center loading status pill. */
+  onLoadProgress?: (progress: StageLoadProgress | null) => void;
 }
 
 interface LoadedCharacter extends MotionHost {
@@ -58,6 +68,8 @@ interface LoadedCharacter extends MotionHost {
   emotion: StoryEmotion;
   /** the game's FlushingController (cheek blush, [顔紅潮操作]) */
   flush: FaceFlush;
+  /** the game's humanoid look-at controller (ModelHandler.OnIKPass + SightWeightSettings, [キャラ視線変更]) */
+  lookAt: StoryLookAt;
   currentBlush: number | null;
   /** Start key (`motionCmd`) of the motion last requested, and of the one actually playing */
   requestedMotion: string | null;
@@ -295,31 +307,73 @@ export function startTieredEpisodePreloader(
     tasks.push({ key, tier, yieldMs, run });
   };
 
-  // --- Tier 1: Episode Cast & Scene Backbone (from compile-time assetManifest) ---
-  if (enable3D) {
-    for (const c of orderFromTurn(manifest.characters, anchorTurnIndex)) {
-      enqueue(`char:${c.costumeId}`, "backbone", () => prewarmCharacterAsset(c));
-    }
-  }
-  const bgOrdered = orderFromTurn(manifest.backgrounds, anchorTurnIndex);
-  const bgLimit = mode === "next1" ? 2 : bgOrdered.length;
-  for (const bg of bgOrdered.slice(0, bgLimit)) {
-    enqueue(`bg:${bg.url}`, "backbone", async () => {
-      await prewarmTextureAsync(bg.url, true);
-    });
-  }
-  if (enable3D) {
-    const propsOrdered = orderFromTurn(manifest.props, anchorTurnIndex);
-    const propLimit = mode === "next1" ? 1 : propsOrdered.length;
-    for (const p of propsOrdered.slice(0, propLimit)) {
-      enqueue(`prop:${p.id}`, "backbone", () => prewarmPropAsset(p));
-    }
-  }
-
-  // --- Tier 2: Immediate Sliding Lookahead Window (N .. N + lookaheadCount) ---
-  const lookaheadTurns = mode === "next1" ? 1 : mode === "next5" ? 8 : 12;
+  // --- Tier 1: Episode Cast & Scene Backbone ---
+  // In "all" mode, warm every character, background, and prop in the episode.
+  // In "next1" / "next5" mode, only warm characters, backgrounds, and props used in the lookahead window.
+  const lookaheadTurns = mode === "next1" ? 1 : mode === "next5" ? 5 : 12;
   const maxLookaheadIdx = anchorTurnIndex + lookaheadTurns;
+  const sliceEnd = Math.min(scenario.turns.length, maxLookaheadIdx + 1);
 
+  if (mode === "all") {
+    if (enable3D) {
+      for (const c of orderFromTurn(manifest.characters, anchorTurnIndex)) {
+        enqueue(`char:${c.costumeId}`, "backbone", () => prewarmCharacterAsset(c));
+      }
+    }
+    for (const bg of orderFromTurn(manifest.backgrounds, anchorTurnIndex)) {
+      enqueue(`bg:${bg.url}`, "backbone", async () => {
+        await prewarmTextureAsync(bg.url, true);
+      });
+    }
+    if (enable3D) {
+      for (const p of orderFromTurn(manifest.props, anchorTurnIndex)) {
+        enqueue(`prop:${p.id}`, "backbone", () => prewarmPropAsset(p));
+      }
+    }
+  } else {
+    const charByCostume = new Map(manifest.characters.map((c) => [c.costumeId, c]));
+    const propById = new Map(manifest.props.map((p) => [p.id, p]));
+    for (let i = anchorTurnIndex; i < sliceEnd; i++) {
+      const t = scenario.turns[i];
+      if (!t) continue;
+      if (t.stateBefore.background.url) {
+        const bgUrl = t.stateBefore.background.url;
+        enqueue(`bg:${bgUrl}`, "backbone", async () => {
+          await prewarmTextureAsync(bgUrl, true);
+        });
+      }
+      if (enable3D) {
+        for (const c of Object.values(t.stateBefore.characters)) {
+          const entry = charByCostume.get(c.costumeId);
+          if (entry) {
+            enqueue(`char:${entry.costumeId}`, "backbone", () => prewarmCharacterAsset(entry));
+          }
+        }
+        for (const p of Object.values(t.stateBefore.props)) {
+          const entry = propById.get(p.id);
+          if (entry) {
+            enqueue(`prop:${entry.id}`, "backbone", () => prewarmPropAsset(entry));
+          }
+        }
+      }
+      for (const ev of [...t.preEvents, ...t.intraEvents]) {
+        if (ev.background?.url) {
+          const bgUrl = String(ev.background.url);
+          enqueue(`bg:${bgUrl}`, "backbone", async () => {
+            await prewarmTextureAsync(bgUrl, true);
+          });
+        }
+        if (enable3D && ev.characterState?.costumeId) {
+          const entry = charByCostume.get(ev.characterState.costumeId);
+          if (entry) {
+            enqueue(`char:${entry.costumeId}`, "backbone", () => prewarmCharacterAsset(entry));
+          }
+        }
+      }
+    }
+  }
+
+  // --- Tier 2: Immediate Sliding Lookahead Window (N .. N + lookaheadTurns) ---
   for (const v of manifest.audio.voices) {
     if (v.firstTurnIndex >= anchorTurnIndex && v.firstTurnIndex <= maxLookaheadIdx) {
       enqueue(`voice:${v.url}`, "lookahead", () => prewarmAudioAsync(v.url));
@@ -345,14 +399,17 @@ export function startTieredEpisodePreloader(
     }
   }
 
-  // Also ensure any reused motion/voice referenced directly by turns[anchorTurnIndex + 1 .. maxLookaheadIdx]
+  // Also ensure any reused motion/voice/BGM/SE referenced directly by turns[anchorTurnIndex .. maxLookaheadIdx]
   // (whose firstTurnIndex was earlier in the episode) is in Tier 2 lookahead:
-  const sliceEnd = Math.min(scenario.turns.length, maxLookaheadIdx + 1);
   for (let i = anchorTurnIndex; i < sliceEnd; i++) {
     const t = scenario.turns[i];
     if (!t) continue;
     if (t.voiceUrl) {
       enqueue(`voice:${t.voiceUrl}`, "lookahead", () => prewarmAudioAsync(t.voiceUrl!));
+    }
+    if (t.stateBefore.audio.bgmUrl) {
+      const bUrl = t.stateBefore.audio.bgmUrl;
+      enqueue(`bgm:${bUrl}`, "lookahead", () => prewarmAudioAsync(bUrl));
     }
     if (enable3D) {
       for (const c of Object.values(t.stateBefore.characters)) {
@@ -379,9 +436,9 @@ export function startTieredEpisodePreloader(
     }
   }
 
-  // --- Tier 3: Idle Full-Episode Drain (enabled for both "next5" and "all") ---
-  if (mode === "next5" || mode === "all") {
-    const yieldMs = mode === "all" ? 5 : 35;
+  // --- Tier 3: Idle Full-Episode Drain (only when the user explicitly selects "all") ---
+  if (mode === "all") {
+    const yieldMs = 10;
     for (const b of orderFromTurn(manifest.audio.bgm, anchorTurnIndex)) {
       enqueue(`bgm:${b.url}`, "episode", () => prewarmAudioAsync(b.url), yieldMs);
     }
@@ -474,21 +531,51 @@ export function startTieredEpisodePreloader(
   };
 }
 
+interface PausableTimer {
+  remainingMs: number;
+  armedAt: number | null;
+  id: number | null;
+  fn: () => void;
+  done: boolean;
+}
+
+function assetBasename(url: string | null | undefined, fallback: string): string {
+  if (!url) return fallback;
+  const clean = url.split("?")[0];
+  const parts = clean.split("/");
+  return parts[parts.length - 1] || fallback;
+}
+
 export const StageCanvas: React.FC<StageCanvasProps> = ({
   turn,
   cameraMode,
   enable3D,
   resolution = "auto",
+  paused = false,
   audioMixer,
   onAdvance,
   onStageReady,
+  onLoadProgress,
 }) => {
   const onStageReadyRef = useRef(onStageReady);
   onStageReadyRef.current = onStageReady;
+  const onLoadProgressRef = useRef(onLoadProgress);
+  onLoadProgressRef.current = onLoadProgress;
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const [loadingCount, setLoadingCount] = useState(0);
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
+  const [inView, setInView] = useState(true);
+  const stagePaused = Boolean(paused) || !inView;
+  const stagePausedRef = useRef(stagePaused);
+  stagePausedRef.current = stagePaused;
+  // Virtual stage clock (seconds): advances only while the stage is unpaused, so camera pans,
+  // character walks, blink/lip timers, and skeletal animations freeze cleanly when hidden or
+  // scrolled out of view and resume without a dt catch-up jump (matching Cleista's live2d.js & effect-clock.js).
+  const stageNowSecRef = useRef(0);
+  const wakeLoopRef = useRef<(() => void) | null>(null);
+  const renderOnceRef = useRef<(() => void) | null>(null);
+  const intraTimersRef = useRef<PausableTimer[]>([]);
+  const firstGateDoneRef = useRef(false);
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -496,6 +583,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const bgMeshRef = useRef<THREE.Mesh | null>(null);
   const bgMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const currentBgUrlRef = useRef<string | null>(null);
+  const dirLightRef = useRef<THREE.DirectionalLight | null>(null);
 
   const charactersRef = useRef<Map<string, LoadedCharacter>>(new Map());
   // Index of the turn shown before this one, to tell reading in order from a jump.
@@ -577,6 +665,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     const dirLight = new THREE.DirectionalLight(0xfffaf0, 1.1);
     dirLight.position.set(2, 5, 4);
     scene.add(dirLight);
+    dirLightRef.current = dirLight;
 
     // 2D-in-3D Background Quad (Unity 1920x1080 @ 100 PPU = 19.2m x 10.8m)
     const bgGeo = new THREE.PlaneGeometry(19.2, 10.8);
@@ -597,11 +686,11 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
 
     const clock = new THREE.Clock();
     let frameId = 0;
+    let resetDeltaOnNextFrame = false;
 
-    const animate = () => {
-      frameId = requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.1);
-      const now = performance.now() / 1000;
+    const renderFrame = (dt: number) => {
+      stageNowSecRef.current += dt;
+      const now = stageNowSecRef.current;
 
       // Update camera interpolation in ADV mode
       if (cameraModeRef.current === "adv") {
@@ -640,11 +729,13 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         if (t >= 1) charMovesRef.current.delete(name);
       }
 
-      // Update character skeletal animations, facial morphs, and voice lip-sync
+      // Update character skeletal animations, humanoid look-at, facial morphs, and voice lip-sync
       const lip = audioMixer.getLipSync();
       const speaker = activeSpeakerJpRef.current;
       for (const char of charactersRef.current.values()) {
+        char.lookAt.restore();
         updateStoryMotion(char, dt);
+        char.lookAt.apply(dt);
         char.copyFaceBones?.();
         // The game's lip-sync callback fires PlayABLip while the voice analysis hears anything
         if (char.name === speaker && lip.level > VOICE_AUDIBLE_LEVEL) char.emotion.voiceActive();
@@ -653,6 +744,30 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
 
       renderer.render(scene, camera);
+    };
+
+    const animate = () => {
+      if (stagePausedRef.current) {
+        frameId = 0;
+        resetDeltaOnNextFrame = true;
+        return;
+      }
+      frameId = requestAnimationFrame(animate);
+      const rawDelta = clock.getDelta();
+      const dt = resetDeltaOnNextFrame ? 0 : Math.min(rawDelta, 0.1);
+      resetDeltaOnNextFrame = false;
+      renderFrame(dt);
+    };
+
+    wakeLoopRef.current = () => {
+      if (!stagePausedRef.current && frameId === 0) {
+        resetDeltaOnNextFrame = true;
+        clock.getDelta();
+        frameId = requestAnimationFrame(animate);
+      }
+    };
+    renderOnceRef.current = () => {
+      renderFrame(0);
     };
 
     animate();
@@ -669,13 +784,59 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     const resizeObs = new ResizeObserver(handleResize);
     resizeObs.observe(container);
 
+    const io = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry) {
+          setInView(entry.isIntersecting && entry.intersectionRatio >= 0.05);
+        }
+      },
+      { threshold: [0, 0.05, 0.25] }
+    );
+    io.observe(container);
+
     return () => {
-      cancelAnimationFrame(frameId);
+      if (frameId !== 0) cancelAnimationFrame(frameId);
+      wakeLoopRef.current = null;
+      renderOnceRef.current = null;
+      io.disconnect();
       resizeObs.disconnect();
       renderer.dispose();
       rendererRef.current = null;
     };
   }, [audioMixer]);
+
+  // Pause / resume virtual stage clock, active mid-line timers, and fade animations
+  // when the tab is hidden, an overlay covers the reader, or the stage is scrolled out of view.
+  useEffect(() => {
+    const now = performance.now();
+    if (stagePaused) {
+      for (const task of intraTimersRef.current) {
+        if (!task.done && task.id !== null) {
+          window.clearTimeout(task.id);
+          task.id = null;
+          if (task.armedAt !== null) {
+            task.remainingMs = Math.max(0, task.remainingMs - (now - task.armedAt));
+          }
+          task.armedAt = null;
+        }
+      }
+      fadeRef.current?.getAnimations?.().forEach((anim) => anim.pause());
+    } else {
+      for (const task of intraTimersRef.current) {
+        if (!task.done && task.id === null) {
+          task.armedAt = now;
+          task.id = window.setTimeout(() => {
+            task.done = true;
+            task.id = null;
+            task.fn();
+          }, task.remainingMs);
+        }
+      }
+      fadeRef.current?.getAnimations?.().forEach((anim) => anim.play());
+      wakeLoopRef.current?.();
+    }
+  }, [stagePaused]);
 
   // Apply 3D resolution pixel ratio changes
   useEffect(() => {
@@ -777,7 +938,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     durationSec: number
   ) => {
     if (!cameraRef.current) return;
-    const now = performance.now() / 1000;
+    const now = stageNowSecRef.current;
     camFromPosRef.current.copy(cameraRef.current.position);
     camFromQuatRef.current.copy(cameraRef.current.quaternion);
 
@@ -792,6 +953,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     camToQuatRef.current.setFromEuler(euler);
     camAnimStartRef.current = now;
     camAnimDurRef.current = durationSec;
+    if (durationSec <= 0.001) {
+      cameraRef.current.position.copy(camToPosRef.current);
+      cameraRef.current.quaternion.copy(camToQuatRef.current);
+    }
   };
 
   // Show or clear the fade overlay (暗転 = black, ブラックアウト, 円 wipes drawn as plain fades).
@@ -801,6 +966,24 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     el.style.transition = durationSec > 0 ? `opacity ${durationSec}s linear` : "none";
     el.style.backgroundColor = fade.color || "#000000";
     el.style.opacity = fade.active ? "1" : "0";
+  };
+
+  // Apply [ライト回転] and [ライト光源色変更] (LightRotateCommand / LightColorCommand -> StoryScene.directionalLight)
+  const applyLighting = (lighting: StageSnapshot["lighting"] | undefined) => {
+    const rot = lighting?.rotation ?? STORY_LIGHTING.lightEulerUnity;
+    const col = lighting?.color ?? STORY_LIGHTING.color;
+    setToonLighting({
+      lightEulerUnity: rot,
+      color: col,
+      ambientSH: STORY_LIGHTING.ambientSH,
+    });
+    if (dirLightRef.current) {
+      dirLightRef.current.color.setRGB(col[0], col[1], col[2]);
+    }
+  };
+
+  const resolveCharEye = (charName: string): THREE.Object3D | null => {
+    return charactersRef.current.get(charName)?.lookAt.getEyeBoneTransform() ?? null;
   };
 
   // Helper to update background quad state
@@ -825,11 +1008,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         bgMeshRef.current.visible = false;
       }
     }
-    const now = performance.now() / 1000;
+    const now = stageNowSecRef.current;
     bgFromPosRef.current.copy(bgMeshRef.current.position);
     bgToPosRef.current.set(pos[0], pos[1], -pos[2]);
     bgAnimStartRef.current = now;
     bgAnimDurRef.current = durationSec;
+    if (durationSec <= 0.001) {
+      bgMeshRef.current.position.copy(bgToPosRef.current);
+    }
     bgMeshRef.current.scale.set(scale[0] || 1, scale[1] || 1, 1);
     bgMeshRef.current.rotation.set(
       THREE.MathUtils.degToRad(rot[0]),
@@ -848,7 +1034,6 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         sceneRef.current.remove(loaded.rootGroup);
         charactersRef.current.delete(cState.name);
       }
-      setLoadingCount((c) => c + 1);
       try {
         const [gltf, emotionData, toonParams] = await Promise.all([
           loadGltfCached(gltfLoaderRef.current, cState.glbUrl),
@@ -968,6 +1153,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           mixer: new THREE.AnimationMixer(modelScene),
           emotion: new StoryEmotion(modelScene, emotionData ?? NO_EMOTION_DATA),
           flush: new FaceFlush(modelScene),
+          lookAt: new StoryLookAt(rootGroup, modelScene),
           currentBlush: null,
           requestedMotion: null,
           appliedMotion: null,
@@ -979,8 +1165,6 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       } catch (err) {
         console.warn(`[StageCanvas] Character load failed for ${cState.name}:`, err);
         return;
-      } finally {
-        setLoadingCount((c) => Math.max(0, c - 1));
       }
     }
 
@@ -1000,8 +1184,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     );
 
     // A change in the line's snapshot came from a command at the line's start: reading in order it
-    // plays like the game (expression blend, blush fade); jumping to a line applies it at once.
+    // plays like the game (expression blend, blush fade, look-at transition); jumping applies it at once.
     applyCharacterEmotion(loaded, cState.emotion, arrivedInOrder, cState.emotionTransitionSec ?? -1);
+    loaded.lookAt.applyCommand(cState.lookAt, arrivedInOrder, resolveCharEye);
     if (loaded.currentBlush !== (cState.blush ?? 0)) {
       loaded.currentBlush = cState.blush ?? 0;
       if (arrivedInOrder) loaded.flush.play(loaded.currentBlush, cState.blushFadeSec ?? 0);
@@ -1126,8 +1311,35 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   // Apply turn snapshot and schedule intra-turn choreography events
   useEffect(() => {
     const snap: StageSnapshot = turn.stateBefore;
+    let cancelled = false;
 
-    // 1. Background
+    // Clear any leftover timers from the previous turn
+    for (const task of intraTimersRef.current) {
+      if (task.id !== null) window.clearTimeout(task.id);
+    }
+    intraTimersRef.current = [];
+
+    const scheduleIntraTimer = (fn: () => void, delayMs: number) => {
+      const task: PausableTimer = {
+        remainingMs: Math.max(0, delayMs),
+        armedAt: null,
+        id: null,
+        fn,
+        done: false,
+      };
+      intraTimersRef.current.push(task);
+      if (!stagePausedRef.current) {
+        task.armedAt = performance.now();
+        task.id = window.setTimeout(() => {
+          task.done = true;
+          task.id = null;
+          if (!cancelled) task.fn();
+        }, task.remainingMs);
+      }
+    };
+
+    // 1. Background & Lighting
+    applyLighting(snap.lighting);
     applyBackgroundState(
       snap.background.url,
       snap.background.position,
@@ -1136,26 +1348,42 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       0
     );
 
-    // 2. Camera (use instant cut when seeking/starting turn unless preEvent specifies pan)
+    // 2. Camera & Fade
     let initialCamDur = 0;
     for (const ev of turn.preEvents) {
       if (ev.type === "camera_move" && ev.duration > 0) {
         initialCamDur = Math.min(ev.duration, 2.5);
       }
     }
-    setCameraTarget(snap.camera.position, snap.camera.rotation, initialCamDur);
     const arrivedInOrder = prevTurnIndexRef.current === turn.index - 1;
     prevTurnIndexRef.current = turn.index;
-    // a fade folded into the snapshot came from the line's start: reading in order it plays out
-    applyFade(snap.fade, arrivedInOrder ? Number(snap.fade?.duration ?? 0) : 0);
+    const initialFadeDur = arrivedInOrder ? Number(snap.fade?.duration ?? 0) : 0;
 
-    // 3. Characters & Props. Everything the line's first frame needs is collected so the reader
-    // can hold the line (voice, timeline, Next) until the stage is ready.
-    let cancelled = false;
-    const loads: Promise<unknown>[] = [];
-    if (snap.background.url) loads.push(prewarmTextureAsync(snap.background.url, true));
+    // Instant cuts/fades apply immediately; timed pans/fades wait for the stage gate to settle
+    // (matching Cleista's warmStepAssets -> runBeat) so loading time never eats into the pan/fade.
+    if (initialCamDur <= 0.001) {
+      setCameraTarget(snap.camera.position, snap.camera.rotation, 0);
+    }
+    if (initialFadeDur <= 0.001) {
+      applyFade(snap.fade, 0);
+    }
+
+    // 3. Characters & Props. Collect everything the line's first frame needs so the reader
+    // holds the line (voice, typewriter, timeline, Next) until the stage is ready.
+    const trackedTasks: Array<{ name: string; promise: Promise<unknown> }> = [];
+    const addLoad = (name: string, promise: Promise<unknown>) => {
+      trackedTasks.push({ name, promise });
+    };
+
+    if (snap.background.url) {
+      addLoad(
+        assetBasename(snap.background.url, "background"),
+        prewarmTextureAsync(snap.background.url, true)
+      );
+    }
     for (const cState of Object.values(snap.characters)) {
-      loads.push(syncCharacter(cState, turn.index, arrivedInOrder));
+      const label = assetBasename(cState.glbUrl, cState.costumeId || cState.name);
+      addLoad(label, syncCharacter(cState, turn.index, arrivedInOrder));
     }
     // Hide characters not present in snapshot
     for (const [name, loaded] of charactersRef.current.entries()) {
@@ -1163,18 +1391,50 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         loaded.rootGroup.visible = false;
       }
     }
-    loads.push(syncProps(snap.props));
-    void Promise.allSettled(loads).then(() => {
-      if (!cancelled) onStageReadyRef.current?.(turn);
-    });
+    const propKeys = Object.keys(snap.props);
+    if (propKeys.length > 0) {
+      const firstProp = snap.props[propKeys[0]];
+      addLoad(
+        assetBasename(firstProp?.glbUrl, "props"),
+        syncProps(snap.props)
+      );
+    } else {
+      void syncProps(snap.props);
+    }
 
-    // 4. Play the line's timeline. Events at the same moment are applied together, so a cut that
-    // shows one character, hides another and moves the camera never shows half-done. Events that
-    // change the camera, background, props, fades or music carry the state they leave behind
-    // (build_scenarios.event_state), applied with the same code as a line's starting snapshot.
+    // Report per-asset loading progress for Cleista's top-center status pill
+    const totalLoads = trackedTasks.length;
+    let doneLoads = 0;
+    const pendingNames = new Set(trackedTasks.map((t) => t.name));
+    if (totalLoads > 0) {
+      onLoadProgressRef.current?.({
+        done: 0,
+        total: totalLoads,
+        assetName: trackedTasks[0].name,
+      });
+    }
+    for (const task of trackedTasks) {
+      void task.promise.finally(() => {
+        if (cancelled) return;
+        doneLoads++;
+        pendingNames.delete(task.name);
+        const nextName = pendingNames.values().next().value ?? task.name;
+        if (doneLoads < totalLoads) {
+          onLoadProgressRef.current?.({
+            done: doneLoads,
+            total: totalLoads,
+            assetName: nextName,
+          });
+        }
+      });
+    }
+
+    // 4. Play the line's timeline once the stage gate settles (or times out: 15s on first load,
+    // 5s on subsequent turns, matching Cleista's FIRST_PAINT_WARM_TIMEOUT_MS / WARM_GATE_TIMEOUT_MS).
     const pendingSpawns = new Map<string, Promise<void>>();
     const applyEvent = (ev: IntraEvent) => {
-      const spawning = ev.character && ev.type !== "char_spawn" ? pendingSpawns.get(ev.character) : undefined;
+      const spawning =
+        ev.character && ev.type !== "char_spawn" ? pendingSpawns.get(ev.character) : undefined;
       if (spawning) {
         void spawning.then(() => {
           if (!cancelled) applyEventNow(ev);
@@ -1188,7 +1448,12 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       switch (ev.type) {
         case "char_motion":
           if (c && ev.motionUrl) {
-            void applyCharacterMotion(c, ev.motionId, ev.motionUrl, ev.motionCmd ?? ev.motionId, motionStartFor(
+            void applyCharacterMotion(
+              c,
+              ev.motionId,
+              ev.motionUrl,
+              ev.motionCmd ?? ev.motionId,
+              motionStartFor(
                 {
                   motionPlayType: ev.motionPlayType,
                   immediate: ev.immediate,
@@ -1196,7 +1461,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
                   motionBreathing: ev.motionBreathing,
                 },
                 true
-              ));
+              )
+            );
           }
           break;
         case "char_blush":
@@ -1242,7 +1508,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
               charMovesRef.current.set(ev.character, {
                 from: c.rootGroup.position.clone(),
                 to,
-                start: performance.now() / 1000,
+                start: stageNowSecRef.current,
                 dur,
               });
             } else {
@@ -1253,14 +1519,21 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           break;
         case "camera_move":
         case "camera_rotate":
-          if (ev.camera) setCameraTarget(ev.camera.position, ev.camera.rotation, Number(ev.duration || 0));
+          if (ev.camera)
+            setCameraTarget(ev.camera.position, ev.camera.rotation, Number(ev.duration || 0));
           break;
         case "bg_show":
         case "bg_move":
         case "bg_rotate":
           if (ev.background) {
             const bg = ev.background;
-            applyBackgroundState(bg.url, bg.position, bg.scale, bg.rotation, Number(ev.duration || 0));
+            applyBackgroundState(
+              bg.url,
+              bg.position,
+              bg.scale,
+              bg.rotation,
+              Number(ev.duration || 0)
+            );
           }
           break;
         case "prop_show":
@@ -1277,7 +1550,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         case "se_play":
           if (!ev.seUrl) break;
           if (ev.loop) {
-            audioMixer.startAmbience({ id: ev.seId, url: ev.seUrl, volume: ev.volume ?? 1.0 }, ev.fadeSec ?? 0);
+            audioMixer.startAmbience(
+              { id: ev.seId, url: ev.seUrl, volume: ev.volume ?? 1.0 },
+              ev.fadeSec ?? 0
+            );
           } else {
             audioMixer.playOneShotSe(ev.seId, ev.seUrl, ev.volume ?? 1.0, ev.fadeSec ?? 0);
           }
@@ -1285,9 +1561,32 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         case "se_stop":
           audioMixer.stopAmbience(ev.seId, ev.fadeSec ?? 0);
           break;
-        // char_lookat: no look-at yet
+        case "char_lookat":
+          if (c) {
+            c.lookAt.applyCommand(
+              ev.characterState?.lookAt ?? {
+                mode: ev.mode ?? "angle",
+                value: ev.value ?? 0,
+                duration: ev.duration ?? 0,
+              },
+              true,
+              resolveCharEye
+            );
+          }
+          break;
+        case "light_rotate":
+        case "light_color":
+          applyLighting(
+            ev.lighting ?? {
+              ...snap.lighting,
+              rotation: ev.rotation ?? snap.lighting.rotation,
+              color: ev.color ?? snap.lighting.color,
+            }
+          );
+          break;
       }
     };
+
     const moments: { atSec: number; events: IntraEvent[] }[] = [];
     let delaySec = 0;
     for (const ev of turn.intraEvents) {
@@ -1299,15 +1598,46 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       if (last && last.atSec === delaySec) last.events.push(ev);
       else moments.push({ atSec: delaySec, events: [ev] });
     }
-    const timers = moments.map(({ atSec, events }) =>
-      window.setTimeout(() => events.forEach(applyEvent), Math.max(0, atSec * 1000))
-    );
+
+    let gateSettled = false;
+    const onGateReady = () => {
+      if (cancelled || gateSettled) return;
+      gateSettled = true;
+      firstGateDoneRef.current = true;
+      onLoadProgressRef.current?.(null);
+
+      // Start any timed line-start camera pan or fade now that the stage is ready
+      if (initialCamDur > 0.001) {
+        setCameraTarget(snap.camera.position, snap.camera.rotation, initialCamDur);
+      }
+      if (initialFadeDur > 0.001) {
+        applyFade(snap.fade, initialFadeDur);
+      }
+
+      // Draw one frame immediately so the loaded stage is painted before lifting any cover
+      renderOnceRef.current?.();
+      onStageReadyRef.current?.(turn);
+
+      // Arm the line's timed intraEvents now that the beat is starting
+      for (const { atSec, events } of moments) {
+        scheduleIntraTimer(() => events.forEach(applyEvent), Math.max(0, atSec * 1000));
+      }
+    };
+
+    const gateTimeoutMs = firstGateDoneRef.current ? 5000 : 15000;
+    const gateSafetyTimer = window.setTimeout(onGateReady, gateTimeoutMs);
+    void Promise.allSettled(trackedTasks.map((t) => t.promise)).then(() => {
+      window.clearTimeout(gateSafetyTimer);
+      onGateReady();
+    });
 
     return () => {
       cancelled = true;
-      for (const t of timers) {
-        window.clearTimeout(t);
+      window.clearTimeout(gateSafetyTimer);
+      for (const task of intraTimersRef.current) {
+        if (task.id !== null) window.clearTimeout(task.id);
       }
+      intraTimersRef.current = [];
     };
   }, [turn, enable3D]);
 
@@ -1338,12 +1668,6 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           style={{ left: r.x, top: r.y }}
         />
       ))}
-      {loadingCount > 0 && (
-        <div className="absolute top-14 right-4 z-20 flex items-center gap-2 rounded-full bg-slate-900/80 border border-slate-700/70 px-3 py-1 text-xs text-amber-300 backdrop-blur-md">
-          <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-          Loading 3D assets…
-        </div>
-      )}
     </div>
   );
 };
