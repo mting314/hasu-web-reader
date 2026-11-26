@@ -52,6 +52,8 @@ interface LookMesh {
   plain: THREE.Material[];
   /** Per material slot, as exported: restored when the member stops being ghosted. */
   base: { transparent: boolean; opacity: number }[];
+  /** Depth-only twin drawn just before the mesh while the member is ghosted (see depthTwin). */
+  depth: THREE.Mesh | null;
 }
 
 const FACE_BONES = ["Spine_03", "Neck", "Head"];
@@ -105,6 +107,8 @@ interface Member {
   facing: THREE.Vector3;
   visible: boolean;
   present: boolean;
+  /** Opacity the model was drawn at in the last update (0 = not drawn). */
+  drawnAlpha: number;
 }
 
 const UNLIT = /^(Face|Eye|Brow|EyeHi|EyeShadow|EyeLens)/i;
@@ -128,6 +132,12 @@ export class LiveStage {
   plain = false;
   /** Unit vector (three.js space) from the stage towards the audience: members face +z at MC lineups. */
   audience = new THREE.Vector3(0, 0, 1);
+  /** Split view: the main camera on the left, its exact back view (backCamera) on the right. */
+  split = false;
+  /** Mirror the main view left-right (the back view never is: from behind, left and right already match). */
+  mirror = false;
+  /** The main camera mirrored through the controls' target, re-placed every frame while split. */
+  readonly backCamera = new THREE.PerspectiveCamera(32, 1, 0.05, 200);
 
   private loader = new GLTFLoader();
   private lips: LipStore;
@@ -141,6 +151,8 @@ export class LiveStage {
   private centre: Vec3;
   private disposed = false;
   private lastFrame = performance.now();
+  /** Set while rendering a mirrored view: swaps which winding three treats as front-facing. */
+  private flipWinding = false;
 
   constructor(
     private container: HTMLElement,
@@ -158,6 +170,12 @@ export class LiveStage {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Mirroring negates the projection's x (see layout), which reverses the on-screen winding of every
+    // triangle. three only flips its front face for negative-determinant object matrices, so flip it
+    // here too; culling and gl_FrontFacing (two-sided normals) then stay right in the mirrored view.
+    const state = this.renderer.state;
+    const setMaterial = state.setMaterial;
+    state.setMaterial = (material, frontFaceCW) => setMaterial(material, !!frontFaceCW !== this.flipWinding);
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -190,13 +208,13 @@ export class LiveStage {
         new THREE.BufferGeometry(),
         new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }),
       );
-      skeleton.renderOrder = 10;
+      skeleton.renderOrder = 1000; // after the ghosts, whose render order goes up with their count
       this.scene.add(skeleton);
       this.members.set(m.characterId, {
         cid: m.characterId, name: m.name, costumes: m.costumes, offsets: m.offsets ?? [],
         visibility: m.visibility ?? [], onStage: true, rigs: new Map(), ready: new Map(),
         active: null, skeleton, hips: new THREE.Vector3(), facing: new THREE.Vector3(0, 0, 1),
-        visible: true, present: false,
+        visible: true, present: false, drawnAlpha: 0,
       });
     }
     this.resize();
@@ -216,8 +234,80 @@ export class LiveStage {
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = "100%";
     this.renderer.domElement.style.height = "100%";
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.layout();
+  }
+
+  /**
+   * Viewports in CSS pixels: the whole canvas, or with split on the left half for the main camera
+   * and the right half for the back camera. Sets each camera's aspect and projection, mirrored for
+   * the main camera when `mirror` is on (rebuilt every frame, so toggling needs no extra call).
+   */
+  private layout(): { cam: THREE.PerspectiveCamera; x: number; w: number; h: number; mirror: boolean }[] {
+    const { x: width, y: h } = this.renderer.getSize(new THREE.Vector2());
+    const half = this.split ? Math.floor(width / 2) : width;
+    const views = [{ cam: this.camera, x: 0, w: half, h, mirror: this.mirror }];
+    if (this.split) views.push({ cam: this.backCamera, x: half, w: width - half, h, mirror: false });
+    for (const v of views) {
+      v.cam.aspect = Math.max(1, v.w) / Math.max(1, h);
+      v.cam.updateProjectionMatrix();
+      if (v.mirror) {
+        const e = v.cam.projectionMatrix.elements; // negate clip-space x: the first row
+        e[0] = -e[0]; e[4] = -e[4]; e[8] = -e[8]; e[12] = -e[12];
+        v.cam.projectionMatrixInverse.copy(v.cam.projectionMatrix).invert();
+      }
+    }
+    return views;
+  }
+
+  /**
+   * Render the main view, and with split on the back view beside it: the main camera rotated 180°
+   * about the vertical through the target (same height and distance), so orbit, zoom, follow and fan
+   * cam all carry over to it.
+   */
+  private render() {
+    if (this.split) {
+      const back = this.backCamera;
+      const target = this.controls.target;
+      const eye = this.camera.position;
+      back.fov = this.camera.fov;
+      back.near = this.camera.near;
+      back.far = this.camera.far;
+      back.position.set(2 * target.x - eye.x, eye.y, 2 * target.z - eye.z);
+      back.lookAt(target);
+    }
+    const views = this.layout();
+    this.renderer.setScissorTest(this.split);
+    for (const v of views) {
+      this.renderer.setViewport(v.x, 0, v.w, v.h);
+      this.renderer.setScissor(v.x, 0, v.w, v.h);
+      this.prepareView(v.cam);
+      this.flipWinding = v.mirror;
+      this.renderer.render(this.scene, v.cam);
+    }
+    this.flipWinding = false;
+    this.renderer.setScissorTest(false);
+  }
+
+  /**
+   * Per-view visibility and order: hide whoever blocks this camera's fan-cam shot, and sort the
+   * ghosted members back to front, each one's depth twins just before her colour (see depthTwin).
+   */
+  private prepareView(cam: THREE.Camera) {
+    const ghosts: Member[] = [];
+    for (const m of this.members.values()) {
+      const model = m.active?.model;
+      if (!model || m.drawnAlpha <= 0) continue;
+      model.visible = !this.occludesFanCam(m, cam.position);
+      if (model.visible && m.drawnAlpha < 0.999) ghosts.push(m);
+    }
+    const d = (m: Member) => m.hips.distanceToSquared(cam.position);
+    ghosts.sort((a, b) => d(b) - d(a));
+    ghosts.forEach((m, i) => {
+      for (const l of m.active!.looks) {
+        if (l.depth) l.depth.renderOrder = 1 + 2 * i;
+        l.mesh.renderOrder = 2 + 2 * i;
+      }
+    });
   }
 
   /**
@@ -354,7 +444,7 @@ export class LiveStage {
       }
       const array = Array.isArray(mesh.material);
       const mats = array ? (mesh.material as THREE.Material[]) : [mesh.material as THREE.Material];
-      const look: LookMesh = { mesh, array, costume: [], plain: [], base: [] };
+      const look: LookMesh = { mesh, array, costume: [], plain: [], base: [], depth: null };
       for (const mat of mats) {
         const src = mat as THREE.MeshStandardMaterial;
         const common = {
@@ -385,7 +475,47 @@ export class LiveStage {
       mesh.material = array ? look.costume : look.costume[0];
       looks.push(look);
     });
+    for (const l of looks) l.depth = this.depthTwin(l); // after the traversal, which would visit them
     return looks;
+  }
+
+  /**
+   * A depth-only copy of a mesh for ghosting. Drawn just before the ghost's colour, it leaves only
+   * her nearest surface able to pass the depth test (colour uses LessEqual), so she reads as one
+   * translucent silhouette instead of showing eyes through hair and body through costume. Shares the
+   * mesh's geometry, skeleton and morph weights; hidden until the member is ghosted.
+   */
+  private depthTwin(l: LookMesh): THREE.Mesh {
+    const src = l.mesh;
+    const mats = l.costume.map((m, i) => {
+      const c = m as THREE.MeshBasicMaterial;
+      const d = new THREE.MeshBasicMaterial({
+        map: c.map, side: c.side, transparent: true, colorWrite: false, depthWrite: true,
+        // blended textures (lace, soft hair tips) only hide what's behind where they're mostly opaque
+        alphaTest: Math.max(c.alphaTest, l.base[i].transparent ? 0.5 : 0),
+        // a hair further back, so the same surface's colour never loses the depth test to it
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      });
+      d.name = `${c.name} (depth)`;
+      d.visible = c.depthWrite && c.blending === THREE.NormalBlending; // not the additive eye sparkles
+      return d;
+    });
+    const mat = l.array ? mats : mats[0];
+    let twin: THREE.Mesh;
+    if ((src as THREE.SkinnedMesh).isSkinnedMesh) {
+      const s = src as THREE.SkinnedMesh;
+      const t = new THREE.SkinnedMesh(src.geometry, mat);
+      t.bindMode = s.bindMode;
+      t.bind(s.skeleton, s.bindMatrix);
+      twin = t;
+    } else twin = new THREE.Mesh(src.geometry, mat);
+    twin.morphTargetInfluences = src.morphTargetInfluences; // the same array, so expressions carry over
+    twin.morphTargetDictionary = undefined; // keeps FaceRig from driving it a second time
+    twin.name = `depth:${src.name}`; // not "3d_face…", which reattachFace would move
+    twin.frustumCulled = false;
+    twin.visible = false;
+    src.add(twin); // identity transform: same world matrix as the mesh
+    return twin;
   }
 
   /**
@@ -406,6 +536,8 @@ export class LiveStage {
         mat.opacity = b.opacity * alpha;
       });
       l.mesh.material = l.array ? mats : mats[0];
+      if (l.depth) l.depth.visible = ghost;
+      if (!ghost) l.mesh.renderOrder = 0; // ghosts are ordered per view in prepareView
     }
   }
 
@@ -414,12 +546,11 @@ export class LiveStage {
     for (const m of this.members.values()) for (const c of m.costumes) this.loadRig(m, c.costume);
   }
 
-  /** Is member m between the camera and the fan-cam target (within ~0.45 m of the sight line)? */
-  private occludesFanCam(m: Member): boolean {
+  /** Is member m between the camera at `cam` and the fan-cam target (within ~0.45 m of the sight line)? */
+  private occludesFanCam(m: Member, cam: THREE.Vector3): boolean {
     if (!this.fanCamActive || this.follow === null || m.cid === this.follow) return false;
     const target = this.members.get(this.follow);
     if (!target?.present) return false;
-    const cam = this.camera.position;
     const a = new THREE.Vector2(cam.x, cam.z);
     const b = new THREE.Vector2(target.hips.x, target.hips.z);
     const p = new THREE.Vector2(m.hips.x, m.hips.z);
@@ -531,6 +662,7 @@ export class LiveStage {
     this.lips.prefetch(t);
     if (this.subBones) this.subs.prefetch(t);
     for (const m of this.members.values()) {
+      m.drawnAlpha = 0;
       const costume = this.costumeAt(m, t);
       if (!costume) continue;
       this.loadRig(m, costume);
@@ -556,8 +688,9 @@ export class LiveStage {
       if (fwd.lengthSq() > 1e-6) m.facing.copy(fwd.normalize());
       if (rig.model) {
         const alpha = this.follow !== null && m.cid !== this.follow ? this.othersOpacity : 1;
-        const shown = m.visible && alpha > 0.01 && !this.occludesFanCam(m);
+        const shown = m.visible && alpha > 0.01;
         rig.model.visible = shown;
+        m.drawnAlpha = shown ? alpha : 0; // fan-cam occluders are hidden per view, in prepareView
         if (shown) {
           this.setLook(rig, this.plain, alpha);
           this.applyPose(rig, pose);
@@ -595,6 +728,6 @@ export class LiveStage {
       }
     }
     this.controls.update();
-    this.renderer.render(this.scene, this.camera);
+    this.render();
   }
 }
