@@ -261,10 +261,25 @@ def slug_for_script_id(script_id: str) -> str:
 # Asset paths referenced by the script but absent from public/assets (reported after the build).
 MISSING_ASSETS: dict[str, str] = {}
 
+# What's in our asset store (bucket), from scripts/update_store_manifest.sh, so the compiled JSON
+# is the same whether or not public/assets/ is populated locally. Without the manifest, fall back
+# to the local cache.
+STORE_MANIFEST_PATH = DATA_CACHE_DIR / "asset_store_manifest.txt"
+STORE_MANIFEST: set[str] | None = (
+    set(STORE_MANIFEST_PATH.read_text(encoding="utf-8").split()) if STORE_MANIFEST_PATH.exists() else None
+)
+
 
 def asset_available(rel_path: str) -> bool:
     local_file = PUBLIC_ASSETS_DIR / rel_path
     return local_file.exists() and local_file.stat().st_size > 0
+
+
+def asset_in_store(rel_path: str) -> bool:
+    """Whether our asset store has the file (the bucket manifest, else the local cache)."""
+    if STORE_MANIFEST is not None:
+        return rel_path in STORE_MANIFEST
+    return asset_available(rel_path)
 
 
 def asset_url(rel_path: str, script_id: str = "") -> str:
@@ -356,7 +371,9 @@ def compile_script(
             return {"audio": copy.deepcopy(state["audio"])}
         if t.startswith("prop_"):
             return {"props": copy.deepcopy(state["props"])}
-        if t in ("char_spawn", "char_move") and ev.get("character") in state["characters"]:
+        if t.startswith("light_") or t == "post_effect":
+            return {"lighting": copy.deepcopy(state["lighting"])}
+        if t in ("char_spawn", "char_move", "char_lookat") and ev.get("character") in state["characters"]:
             return {"characterState": copy.deepcopy(state["characters"][ev["character"]])}
         return {}
 
@@ -484,13 +501,41 @@ def compile_script(
             attach_event({"type": "char_rotate", "character": char_name, "rotation": rot})
             continue
 
-        if cmd == "キャラ視線変更" and len(args) >= 3:
+        if cmd == "キャラ視線変更" and len(args) >= 2:
             char_name = args[0]
             mode = args[1]
-            val = parse_vec(args[2], [0.0, 0.0, 0.0]) if "," in args[2] else (float(args[2]) if re.match(r"^-?[\d.]+$", args[2]) else 0.0)
+            val: float | list[float] | str = 0.0
+            dur = 0.0
+            if len(args) >= 3:
+                if "," in args[2]:
+                    val = parse_vec(args[2], [0.0, 0.0, 0.0])
+                elif re.match(r"^-?[\d.]+$", args[2]):
+                    val = float(args[2])
+                else:
+                    val = args[2]
+            if len(args) >= 4 and re.match(r"^-?[\d.]+$", args[3]):
+                dur = float(args[3])
+            elif (
+                len(args) == 3
+                and mode not in ("向き指定", "角度指定", "座標指定", "キャラ指定")
+                and isinstance(val, float)
+            ):
+                dur = val
+                val = 0.0
+            look_obj: dict[str, Any] = {"mode": mode, "value": val}
+            if dur > 0.0:
+                look_obj["duration"] = dur
             if char_name in state["characters"]:
-                state["characters"][char_name]["lookAt"] = {"mode": mode, "value": val}
-            attach_event({"type": "char_lookat", "character": char_name, "mode": mode, "value": val})
+                state["characters"][char_name]["lookAt"] = look_obj
+            attach_event(
+                {
+                    "type": "char_lookat",
+                    "character": char_name,
+                    "mode": mode,
+                    "value": val,
+                    **({"duration": dur} if dur > 0.0 else {}),
+                }
+            )
             continue
 
         if cmd == "キャラ表情変更" and len(args) >= 2:
@@ -517,8 +562,10 @@ def compile_script(
         if cmd in ("キャラモーション再生", "キャラモーション即時再生") and len(args) >= 2:
             char_name, mot_id = args[0], args[1]
             mot_rel = f"3d/motions/{mot_id}.glb"
-            # Check if motion GLB exists locally; if it 404'd on GCS, keep previous valid motionUrl as fallback
-            local_mot = PUBLIC_ASSETS_DIR / mot_rel
+            # A motion missing from the store leaves the character on its previous valid motion.
+            mot_url = asset_url(mot_rel, script_id) if asset_in_store(mot_rel) else None
+            if mot_url is None:
+                MISSING_ASSETS.setdefault(mot_rel, script_id)
             mot_desc = comment or (motions_meta_by_id.get(mot_id) or {}).get("description") or mot_id
             immediate = cmd == "キャラモーション即時再生"
             play_type = int(args[2]) if len(args) >= 3 and re.fullmatch(r"[0-2]", args[2]) else 2
@@ -531,13 +578,13 @@ def compile_script(
                 state["characters"][char_name]["motionId"] = mot_id
                 state["characters"][char_name]["motionDescription"] = mot_desc
                 state["characters"][char_name].update(start)
-                if local_mot.exists() and local_mot.stat().st_size > 0:
-                    state["characters"][char_name]["motionUrl"] = f"/assets/{mot_rel}"
+                if mot_url:
+                    state["characters"][char_name]["motionUrl"] = mot_url
             attach_event({
                 "type": "char_motion",
                 "character": char_name,
                 "motionId": mot_id,
-                "motionUrl": f"/assets/{mot_rel}" if local_mot.exists() else None,
+                "motionUrl": mot_url,
                 "description": mot_desc,
                 "immediate": start["motionImmediate"],
                 "motionCmd": start["motionCmd"],
@@ -565,11 +612,11 @@ def compile_script(
             pos = parse_vec(args[2], [0.0, 0.0, 0.0]) if len(args) >= 3 else [0.0, 0.0, 0.0]
             scale = parse_vec(args[3], [1.0, 1.0, 1.0]) if len(args) >= 4 else [1.0, 1.0, 1.0]
             rot = parse_vec(args[4], [0.0, 0.0, 0.0]) if len(args) >= 5 else [0.0, 0.0, 0.0]
-            pinfo = assets_by_id.get(prop_id, {})
-            glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
-            if not asset_available(glb_rel):
-                # No model for this prop in our store: leave it off the stage rather than
-                # shipping a reference that can only 404.
+            pinfo = assets_by_id.get(prop_id)
+            glb_rel = f"3d/{(pinfo or {}).get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
+            if not pinfo or not asset_in_store(glb_rel):
+                # No model for this prop in our store (e.g. ppadv006_pamphlet isn't in the catalog):
+                # leave it off the stage rather than shipping a reference that can only 404.
                 MISSING_ASSETS.setdefault(glb_rel, script_id)
                 state["props"].pop(alias, None)  # the slot is emptied, not left with an older prop
                 continue
@@ -646,6 +693,21 @@ def compile_script(
             continue
 
         # 5. Lighting & Post Effects
+        # [ライト回転 x,y,z] (LightRotateCommand: sets StoryScene.directionalLight.localEulerAngles)
+        if cmd == "ライト回転":
+            rot = parse_vec(args[0], [0.0, 0.0, 0.0]) if args else [0.0, 0.0, 0.0]
+            state["lighting"]["rotation"] = rot
+            attach_event({"type": "light_rotate", "rotation": rot})
+            continue
+
+        # [ライト光源色変更 r,g,b] (LightColorCommand + StoryDefine.ConvertColor: sets directionalLight.color)
+        if cmd == "ライト光源色変更":
+            raw_col = parse_vec(args[0], [1.0, 1.0, 1.0]) if args else [1.0, 1.0, 1.0]
+            col = [round(c / 255.0, 4) for c in raw_col] if any(c > 1.0 for c in raw_col) else raw_col
+            state["lighting"]["color"] = col
+            attach_event({"type": "light_color", "color": col})
+            continue
+
         if cmd == "被写界深度開始" and len(args) >= 3:
             state["lighting"]["dof"] = {
                 "enabled": True,
@@ -772,11 +834,16 @@ def compile_script(
             speaker_en = SPEAKER_EN_MAP.get(speaker_jp, speaker_jp)
             char_id = cmeta["id"] if cmeta else None
             icon_rel = f"assets/charaicon/charamini_icon_face_sd_{char_id}_01.webp"
-            icon_url = asset_url(icon_rel, script_id) if char_id and asset_available(icon_rel) else None
+            if char_id and asset_in_store(icon_rel):
+                icon_url = asset_url(icon_rel, script_id)
+            else:
+                if char_id:
+                    MISSING_ASSETS.setdefault(icon_rel, script_id)
+                icon_url = None
             voice_url = None
             if voice_ref and voice_ref != "なし":
                 voice_rel = f"story/voice/{voice_ref}.webm"
-                if asset_available(voice_rel):
+                if asset_in_store(voice_rel):
                     voice_url = asset_url(voice_rel, script_id)
                 else:
                     # Clip not in our store: play the line unvoiced (reading-time pacing)
@@ -1066,8 +1133,12 @@ def main() -> None:
     assets_by_id = {a["id"]: a for a in model_ctx["data"]["assets"]}
 
     motions_meta_path = PUBLIC_ASSETS_DIR / "3d/metadata/motions.json"
+    if not motions_meta_path.exists():
+        motions_meta_path = DATA_CACHE_DIR / "motions_meta.json"
     motions_list = json.loads(motions_meta_path.read_text(encoding="utf-8")) if motions_meta_path.exists() else []
-    motions_meta_by_id = {m["id"]: m for m in motions_list}
+    if isinstance(motions_list, dict):
+        motions_list = (motions_list.get("data") or {}).get("motions") or motions_list.get("motions") or []
+    motions_meta_by_id = {m["id"]: m for m in motions_list if isinstance(m, dict) and "id" in m}
 
     bgm_map_path = HASU_DUB_DIR / "bgm_map.json"
     bgm_map_raw = json.loads(bgm_map_path.read_text(encoding="utf-8")) if bgm_map_path.exists() else {}

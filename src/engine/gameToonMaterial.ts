@@ -1,10 +1,13 @@
 import * as THREE from "three";
 import {
+  EYE_FRAG,
+  EYE_VERT,
   FORWARD_FRAG,
   FORWARD_VERT,
   OUTLINE_FRAG,
   OUTLINE_VERT,
   UBER_DEFAULTS,
+  EYE_DEFAULTS,
   UBER_UNIFORMS,
 } from "./shaders/uberToonGame";
 
@@ -34,6 +37,7 @@ export interface UnityMaterial {
 }
 
 export const UBER_TOON_SHADER = "MELPOT/Toon/UberToonShader";
+export const CHARACTER_EYE_SHADER = "Character/ToonShader_CharacterEye";
 
 /** The shader's SubShader queue tag ("Geometry"), used when a material keeps the default (-1). */
 const SHADER_QUEUE = 2000;
@@ -176,7 +180,8 @@ function unityDefaultTexture(name: string): THREE.DataTexture {
 function uniformsFor(
   names: string[],
   unity: UnityMaterial,
-  textures: Map<string, THREE.Texture>
+  textures: Map<string, THREE.Texture>,
+  defaults: Record<string, number | number[] | string> = UBER_DEFAULTS
 ): Record<string, THREE.IUniform> {
   const out: Record<string, THREE.IUniform> = {
     uObjectToWorld: { value: new THREE.Matrix4() },
@@ -188,7 +193,7 @@ function uniformsFor(
       continue;
     }
     const [type] = UBER_UNIFORMS[name];
-    const fallback = UBER_DEFAULTS[name];
+    const fallback = defaults[name];
     if (type === "sampler2D") {
       out[name] = { value: textures.get(name) ?? unityDefaultTexture(typeof fallback === "string" ? fallback : "white") };
     } else if (name.endsWith("_ST")) {
@@ -224,9 +229,14 @@ function namesOf(src: string): string[] {
 // the uniforms each pass reads, worked out once (the program sources are constants)
 const FORWARD_UNIFORMS = [...new Set([...namesOf(FORWARD_VERT), ...namesOf(FORWARD_FRAG)])];
 const OUTLINE_UNIFORMS = [...new Set([...namesOf(OUTLINE_VERT), ...namesOf(OUTLINE_FRAG)])];
+const EYE_UNIFORMS = [...new Set([...namesOf(EYE_VERT), ...namesOf(EYE_FRAG)])];
 
-function applyStencil(m: THREE.Material, f: Record<string, number>) {
-  const v = (k: string, d: number) => f[k] ?? (UBER_DEFAULTS[k] as number | undefined) ?? d;
+function applyStencil(
+  m: THREE.Material,
+  f: Record<string, number>,
+  defaults: Record<string, number | number[] | string> = UBER_DEFAULTS
+) {
+  const v = (k: string, d: number) => f[k] ?? (defaults[k] as number | undefined) ?? d;
   m.stencilWrite = true; // three.js only enables the stencil test with this set
   m.stencilRef = v("_StencilReference", 255);
   m.stencilFuncMask = v("_StencilReadMask", 255);
@@ -309,6 +319,53 @@ export async function createGameToonPasses(
   return { forward, outline, queue: unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE };
 }
 
+/** Build the UniversalForward pass of a Character/ToonShader_CharacterEye material. */
+export async function createGameEyeMaterial(
+  name: string,
+  unity: UnityMaterial,
+  loadTexture: (index: number) => Promise<THREE.Texture>
+): Promise<{ material: THREE.ShaderMaterial; queue: number }> {
+  const textures = new Map<string, THREE.Texture>();
+  await Promise.all(
+    Object.entries(unity.textures).map(async ([slot, t]) => {
+      const tex = await loadTexture(t.index);
+      if (tex.colorSpace !== THREE.NoColorSpace) {
+        tex.colorSpace = THREE.NoColorSpace; // gamma-space rendering: sample the stored values
+        tex.needsUpdate = true;
+      }
+      textures.set(slot, tex);
+    })
+  );
+  const f = unity.floats;
+  const num = (k: string) => f[k] ?? (EYE_DEFAULTS[k] as number | undefined) ?? 0;
+  const src = BLEND_FACTOR[num("_BlendRGBSrc")] ?? THREE.OneFactor;
+  const dst = (BLEND_FACTOR[num("_BlendRGBDst")] ?? THREE.ZeroFactor) as THREE.BlendingDstFactor;
+  const srcA = BLEND_FACTOR[num("_BlendAlphaSrc")] ?? THREE.OneFactor;
+  const dstA = (BLEND_FACTOR[num("_BlendAlphaDst")] ?? THREE.ZeroFactor) as THREE.BlendingDstFactor;
+  const opaque = src === THREE.OneFactor && dst === THREE.ZeroFactor;
+
+  const material = new THREE.ShaderMaterial({
+    name: `${name} (CharacterEye)`,
+    vertexShader: EYE_VERT,
+    fragmentShader: EYE_FRAG,
+    uniforms: uniformsFor(EYE_UNIFORMS, unity, textures, EYE_DEFAULTS),
+    side: CULL[num("_CullMode")] ?? THREE.FrontSide,
+    depthWrite: num("_ZWriteMode") !== 0,
+    depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
+    blending: opaque ? THREE.NoBlending : THREE.CustomBlending,
+    blendSrc: src,
+    blendDst: dst,
+    blendSrcAlpha: srcA,
+    blendDstAlpha: dstA,
+    polygonOffset: num("_ZFactor") !== 0 || num("_ZUnits") !== 0,
+    polygonOffsetFactor: num("_ZFactor"),
+    polygonOffsetUnits: num("_ZUnits"),
+  });
+  applyStencil(material, f, EYE_DEFAULTS);
+  material.userData.unity = unity;
+  return { material, queue: unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE };
+}
+
 /** Whether a costume GLB comes from scripts/export_costume.py (its materials carry `extras.unity`). */
 export function isGameCostume(root: THREE.Object3D): boolean {
   let found = false;
@@ -354,11 +411,11 @@ export async function prepareGameCostume(
         mesh.material = eyeHighlightMaterial(mat.map, unity);
         applyStencil(mesh.material, unity.floats);
         mesh.renderOrder = queue;
-      } else if (unity.shader === "Character/ToonShader_CharacterEye" && mat.map) {
-        // TODO: port Character/ToonShader_CharacterEye; until then the iris texture unlit
-        mesh.material = new THREE.MeshBasicMaterial({ map: mat.map, name: mat.name });
-        applyStencil(mesh.material, unity.floats);
-        mesh.renderOrder = queue;
+      } else if (unity.shader === CHARACTER_EYE_SHADER) {
+        const eye = await createGameEyeMaterial(mat.name, unity, loadTexture);
+        mesh.material = eye.material;
+        mesh.renderOrder = eye.queue;
+        bindObjectSpace(mesh, rootBone);
       } else {
         mesh.visible = false;
       }
@@ -370,6 +427,17 @@ const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
 const _one = new THREE.Vector3(1, 1, 1);
+
+function bindObjectSpace(mesh: THREE.Mesh, rootBone: THREE.Object3D | null) {
+  const space = rootBone ?? mesh;
+  const update = (_r: unknown, _s: unknown, _c: unknown, _g: unknown, material: THREE.Material) => {
+    const u = (material as THREE.ShaderMaterial).uniforms;
+    space.matrixWorld.decompose(_pos, _quat, _scale);
+    (u.uObjectToWorld.value as THREE.Matrix4).compose(_pos, _quat, _one);
+    (u.uWorldToObject.value as THREE.Matrix4).copy(u.uObjectToWorld.value).invert();
+  };
+  mesh.onBeforeRender = update as THREE.Object3D["onBeforeRender"];
+}
 
 /**
  * Put the two passes on a mesh: the mesh gets the lit pass, a twin mesh (same geometry, skeleton
@@ -388,14 +456,7 @@ export function applyGameToonPasses(mesh: THREE.Mesh, passes: GameToonPasses, ro
   outline.userData = { ...mesh.userData, toonOutlineOf: mesh.name };
   mesh.parent?.add(outline);
 
-  const space = rootBone ?? mesh;
-  const update = (_r: unknown, _s: unknown, _c: unknown, _g: unknown, material: THREE.Material) => {
-    const u = (material as THREE.ShaderMaterial).uniforms;
-    space.matrixWorld.decompose(_pos, _quat, _scale);
-    (u.uObjectToWorld.value as THREE.Matrix4).compose(_pos, _quat, _one);
-    (u.uWorldToObject.value as THREE.Matrix4).copy(u.uObjectToWorld.value).invert();
-  };
-  mesh.onBeforeRender = update as THREE.Object3D["onBeforeRender"];
-  outline.onBeforeRender = update as THREE.Object3D["onBeforeRender"];
+  bindObjectSpace(mesh, rootBone);
+  bindObjectSpace(outline, rootBone);
   return outline;
 }

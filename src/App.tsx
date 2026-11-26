@@ -28,6 +28,7 @@ import {
   PreloadProgress,
   prewarmEpisodeCast,
   StageCanvas,
+  StageLoadProgress,
   startTieredEpisodePreloader,
 } from "./components/StageCanvas";
 import { JapaneseLookupText } from "./components/JapaneseLookupText";
@@ -105,7 +106,9 @@ export default function App() {
   });
 
   const [autoPlay, setAutoPlay] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
+  const [fakeFullscreen, setFakeFullscreen] = useState(false);
+  const isFullscreen = nativeFullscreen || fakeFullscreen;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const [perChannelOpen, setPerChannelOpen] = useState(false);
@@ -116,6 +119,11 @@ export default function App() {
   const [speakerFilter, setSpeakerFilter] = useState("ALL");
   const [twoColTranscript, setTwoColTranscript] = useState(true);
   const [twoColPageLayout, setTwoColPageLayout] = useState(false);
+  const [tabHiddenPaused, setTabHiddenPaused] = useState(false);
+  const [scenarioLoadingSlug, setScenarioLoadingSlug] = useState<string | null>(null);
+  const [stageLoadProgress, setStageLoadProgress] = useState<StageLoadProgress | null>(null);
+  const [firstTurnReady, setFirstTurnReady] = useState(false);
+  const [visibleStatusPill, setVisibleStatusPill] = useState<string | null>(null);
 
   // Audio volume & BGM mini-player UI state
   const [masterVol, setMasterVol] = useState(0.85);
@@ -161,10 +169,25 @@ export default function App() {
   const [lineFinished, setLineFinished] = useState(false);
   const lineStartRef = useRef(performance.now());
   const navKindRef = useRef<"advance" | "seek">("seek");
+  const lastTurnNavKindRef = useRef<"advance" | "seek">("seek");
   const autoPlayRef = useRef(autoPlay);
   autoPlayRef.current = autoPlay;
   const autoJustEnabledRef = useRef(false);
   const pausedByHiddenTabRef = useRef(false);
+  // A line whose stage gate settled while the tab was hidden starts when the tab comes back.
+  const deferredLineStartRef = useRef<(() => void) | null>(null);
+  const runDeferredLineStart = () => {
+    const start = deferredLineStartRef.current;
+    deferredLineStartRef.current = null;
+    start?.();
+  };
+  const hiddenPausedAtRef = useRef<number | null>(null);
+  const readingTimerRef = useRef<{
+    id: number | null;
+    remainingMs: number;
+    armedAt: number | null;
+    active: boolean;
+  }>({ id: null, remainingMs: 0, armedAt: null, active: false });
 
   // Load episode catalog
   useEffect(() => {
@@ -179,13 +202,22 @@ export default function App() {
 
   // Load selected scenario JSON
   useEffect(() => {
+    let cancelled = false;
+    const slug = slugForScriptId(activeScriptId);
     AudioMixer.stopAll();
     setAutoPlay(false);
-    fetch(`/data/scenarios/${slugForScriptId(activeScriptId)}.json`)
-      .then((r) => r.json())
+    setFirstTurnReady(false);
+    setScenarioLoadingSlug(slug);
+    fetch(`/data/scenarios/${slug}.json`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((raw: ScenarioData) => {
+        if (cancelled) return;
         const data = rewriteAssetUrls(raw); // point /assets/* at GCS when configured
         setScenario(data);
+        setScenarioLoadingSlug(null);
         const availableIds = data.translationSources.map((s) => s.id);
         setSettings((prev) => ({
           ...prev,
@@ -201,7 +233,16 @@ export default function App() {
           setCurrentTurnIndex(0);
         }
       })
-      .catch((e) => console.error("Failed to load scenario:", e));
+      .catch((e) => {
+        if (cancelled) return;
+        // Lift the loading cover so the previous part stays readable.
+        setScenarioLoadingSlug(null);
+        setFirstTurnReady(true);
+        console.error("Failed to load scenario:", e);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activeScriptId]);
 
   const currentTurn: DialogueTurn | null = useMemo(() => {
@@ -239,18 +280,39 @@ export default function App() {
     return () => window.clearInterval(id);
   }, []);
 
-  // Cleista "Pause when tab hidden" behavior
+  // Cleista "Pause when tab hidden" behavior: pauses voice, BGM, SEs, auto-advance,
+  // typewriter, unvoiced reading timer, and the 3D stage clock / intra-line timers.
   useEffect(() => {
-    if (!settings.pauseWhenHidden) return;
+    if (!settings.pauseWhenHidden) {
+      if (hiddenPausedAtRef.current !== null) {
+        const pausedMs = Math.max(0, performance.now() - hiddenPausedAtRef.current);
+        hiddenPausedAtRef.current = null;
+        lineStartRef.current += pausedMs;
+      }
+      setTabHiddenPaused(false);
+      runDeferredLineStart();
+      return;
+    }
     const onVisChange = () => {
       if (document.hidden) {
+        if (hiddenPausedAtRef.current === null) {
+          hiddenPausedAtRef.current = performance.now();
+        }
+        setTabHiddenPaused(true);
         AudioMixer.pauseForHiddenTab();
         if (autoPlayRef.current) {
           pausedByHiddenTabRef.current = true;
           setAutoPlay(false);
         }
       } else {
+        if (hiddenPausedAtRef.current !== null) {
+          const pausedMs = Math.max(0, performance.now() - hiddenPausedAtRef.current);
+          hiddenPausedAtRef.current = null;
+          lineStartRef.current += pausedMs;
+        }
+        setTabHiddenPaused(false);
         AudioMixer.resumeFromHiddenTab();
+        runDeferredLineStart();
         if (pausedByHiddenTabRef.current) {
           pausedByHiddenTabRef.current = false;
           setAutoPlay(true);
@@ -304,11 +366,49 @@ export default function App() {
     [scenario]
   );
 
-  // The current line's stage (background, cast, motions, props) has loaded: until then advancing is
-  // blocked, so a first load can't skip ahead through lines whose models haven't appeared yet.
+  // The current line's stage (background, cast, motions, props) has loaded: until then advancing,
+  // voice, typewriter, and timed events are held (matching Cleista's warmStepAssets -> runBeat).
   // (The turn object, not its index: line 0 of a newly picked episode must not count as ready.)
   const [stageReadyTurn, setStageReadyTurn] = useState<DialogueTurn | null>(null);
   const stageReady = !settings.enable3DStage || (currentTurn !== null && stageReadyTurn === currentTurn);
+
+  useEffect(() => {
+    if (stageReady && currentTurn) {
+      setFirstTurnReady(true);
+    }
+  }, [stageReady, currentTurn]);
+
+  // Cleista top-center loading status pill (#stageJpLoading) with 80ms show grace & 200ms hide debounce
+  const rawStatusText = useMemo(() => {
+    if (scenarioLoadingSlug) {
+      return `Loading ${scenarioLoadingSlug}…`;
+    }
+    if (!stageReady && currentTurn && scenario) {
+      if (stageLoadProgress && stageLoadProgress.total > 0) {
+        return `Loading line ${stageLoadProgress.done}/${stageLoadProgress.total} · ${stageLoadProgress.assetName}…`;
+      }
+      return `Loading line ${currentTurn.lineNumber}/${scenario.totalTurns}…`;
+    }
+    return null;
+  }, [scenarioLoadingSlug, stageReady, currentTurn, scenario, stageLoadProgress]);
+
+  useEffect(() => {
+    if (rawStatusText) {
+      if (visibleStatusPill !== null) {
+        setVisibleStatusPill(rawStatusText);
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        setVisibleStatusPill(rawStatusText);
+      }, 80);
+      return () => window.clearTimeout(timer);
+    } else if (visibleStatusPill !== null) {
+      const timer = window.setTimeout(() => {
+        setVisibleStatusPill(null);
+      }, 200);
+      return () => window.clearTimeout(timer);
+    }
+  }, [rawStatusText, visibleStatusPill]);
 
   /** Step to the next line immediately (Next button, auto mode). */
   const handleNext = useCallback(() => {
@@ -323,16 +423,18 @@ export default function App() {
 
   /**
    * Two-stage advance (clicking the stage canvas or pressing Space/ArrowRight):
+   * Blocked while the current line's stage gate is pending (matching Cleista's navigation.js).
    * 1st click while typewriter is still typing -> completes the current line immediately.
    * Click when text is already complete -> advances to the next line.
    */
   const handleStageOrKeyAdvance = useCallback(() => {
+    if (!stageReady || !firstTurnReady) return;
     if (!isTypewriterDone) {
       setRevealedChars(9999);
       return;
     }
     handleNext();
-  }, [isTypewriterDone, handleNext, stageReady]);
+  }, [isTypewriterDone, handleNext, stageReady, firstTurnReady]);
 
   const handlePrev = useCallback(() => {
     if (currentTurnIndex > 0) {
@@ -350,46 +452,106 @@ export default function App() {
     [scenario]
   );
 
-  // Start a line's audio when the line changes
+  // Immediate turn change setup: sync BGM/ambience and stop previous voice / one-shot SEs.
+  // Voice playback and reading timers are held until stageReady fires (matching Cleista's runBeat).
   useEffect(() => {
     if (!currentTurn) return;
     const kind = navKindRef.current;
+    lastTurnNavKindRef.current = kind;
     navKindRef.current = "seek";
     setLineFinished(false);
-    lineStartRef.current = performance.now();
+    if (readingTimerRef.current.id !== null) {
+      window.clearTimeout(readingTimerRef.current.id);
+      readingTimerRef.current.id = null;
+    }
+    readingTimerRef.current.active = false;
+
     if (kind === "seek") {
       AudioMixer.stopOneShotSes();
+      AudioMixer.stopVoice();
+    } else if (!sharesVoiceWithNext(scenario?.turns[currentTurn.index - 1] ?? null)) {
+      AudioMixer.stopVoice();
     }
 
     const snap = currentTurn.stateBefore;
     AudioMixer.syncBgm(snap.audio.bgmUrl, snap.audio.bgmVolume);
     AudioMixer.syncAmbience(snap.audio.ambience ?? []);
+  }, [currentTurn, scenario, sharesVoiceWithNext]);
 
-    let fallbackTimer: number | null = null;
-    const finish = () => setLineFinished(true);
+  // Start the line's voice (or unvoiced reading timer) once the stage gate settles (stageReady).
+  useEffect(() => {
+    if (!currentTurn || !stageReady) return;
+    lineStartRef.current = performance.now();
+
+    const finish = () => {
+      readingTimerRef.current.active = false;
+      readingTimerRef.current.id = null;
+      setLineFinished(true);
+    };
     const finishAfterReading = () => {
       const jpChars = currentTurn.textJp.replace(/\s/g, "").length;
       const readingMs = Math.min(9000, 1400 + jpChars * 90);
-      fallbackTimer = window.setTimeout(finish, readingMs);
+      readingTimerRef.current.remainingMs = readingMs;
+      readingTimerRef.current.active = true;
+      if (!document.hidden || !settings.pauseWhenHidden) {
+        readingTimerRef.current.armedAt = performance.now();
+        readingTimerRef.current.id = window.setTimeout(finish, readingMs);
+      } else {
+        readingTimerRef.current.armedAt = null;
+        readingTimerRef.current.id = null;
+      }
     };
 
-    if (currentTurn.voiceUrl) {
-      AudioMixer.playVoice(currentTurn.voiceUrl, {
-        startSec: currentTurn.voiceStartSec || 0,
-        endSec: currentTurn.voiceEndSec ?? null,
-        autoContinue: autoPlayRef.current && sharesVoiceWithNext(currentTurn),
-        onEnded: finish,
-        onError: finishAfterReading,
-      });
-    } else {
-      AudioMixer.stopVoice();
-      finishAfterReading();
-    }
+    const startLine = () => {
+      if (currentTurn.voiceUrl) {
+        AudioMixer.playVoice(currentTurn.voiceUrl, {
+          startSec: currentTurn.voiceStartSec || 0,
+          endSec: currentTurn.voiceEndSec ?? null,
+          autoContinue: autoPlayRef.current && sharesVoiceWithNext(currentTurn),
+          onEnded: finish,
+          onError: finishAfterReading,
+        });
+      } else {
+        AudioMixer.stopVoice();
+        finishAfterReading();
+      }
+    };
+    if (document.hidden && settings.pauseWhenHidden) deferredLineStartRef.current = startLine;
+    else startLine();
 
     return () => {
-      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+      deferredLineStartRef.current = null;
+      if (readingTimerRef.current.id !== null) {
+        window.clearTimeout(readingTimerRef.current.id);
+        readingTimerRef.current.id = null;
+      }
+      readingTimerRef.current.active = false;
     };
-  }, [currentTurn, sharesVoiceWithNext]);
+  }, [currentTurn, stageReady, sharesVoiceWithNext]);
+
+  // Pause / resume the unvoiced reading fallback timer when the tab is hidden / shown
+  useEffect(() => {
+    const rt = readingTimerRef.current;
+    if (!rt.active) return;
+    const now = performance.now();
+    if (tabHiddenPaused) {
+      if (rt.id !== null) {
+        window.clearTimeout(rt.id);
+        rt.id = null;
+        if (rt.armedAt !== null) {
+          rt.remainingMs = Math.max(0, rt.remainingMs - (now - rt.armedAt));
+        }
+        rt.armedAt = null;
+      }
+    } else if (rt.id === null) {
+      rt.armedAt = now;
+      rt.id = window.setTimeout(() => {
+        rt.active = false;
+        rt.id = null;
+        setLineFinished(true);
+      }, rt.remainingMs);
+    }
+  }, [tabHiddenPaused]);
 
   // Auto mode: advance once the line is finished.
   useEffect(() => {
@@ -427,15 +589,19 @@ export default function App() {
     setAutoPlay(next);
   };
 
-  // Typewriter text reveal animation. A layout effect, so the reset to 0 lands before the new line
-  // is painted (otherwise it flashes fully revealed for a frame, with the previous line's count).
+  // Typewriter text reveal animation: resets to 0 on a new turn (before paint) and holds until
+  // stageReady is true, pausing ticks while tabHiddenPaused is true.
   useLayoutEffect(() => {
     if (!currentTurn) return;
+    setRevealedChars(0);
+  }, [currentTurn]);
+
+  useEffect(() => {
+    if (!currentTurn || !stageReady || tabHiddenPaused) return;
     if (settings.textSpeed >= 5) {
       setRevealedChars(9999);
       return;
     }
-    setRevealedChars(0);
     const charsPerTick = settings.textSpeed;
     const interval = window.setInterval(() => {
       setRevealedChars((c) => {
@@ -447,7 +613,7 @@ export default function App() {
       });
     }, 26);
     return () => window.clearInterval(interval);
-  }, [currentTurn, settings.textSpeed]);
+  }, [currentTurn, stageReady, tabHiddenPaused, settings.textSpeed]);
 
   // Keep the active line in view in the script panel, scrolling as little as needed (like Cleista's
   // syncLineChrome): a line below the visible area ends up at the panel's bottom, one above at its
@@ -499,16 +665,85 @@ export default function App() {
     }
   }, [sidebarOpen]);
 
-  const toggleFullscreen = () => {
-    if (!stageContainerRef.current) return;
-    if (!document.fullscreenElement) {
-      stageContainerRef.current.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
+  // Sync native fullscreen state when user exits with Esc or browser chrome
+  useEffect(() => {
+    const syncFs = () => {
+      const fsEl =
+        document.fullscreenElement ??
+        (document as unknown as { webkitFullscreenElement?: Element | null })
+          .webkitFullscreenElement ??
+        null;
+      const active = Boolean(fsEl);
+      setNativeFullscreen(active);
+      if (active) setFakeFullscreen(false);
+    };
+    document.addEventListener("fullscreenchange", syncFs);
+    document.addEventListener("webkitfullscreenchange", syncFs);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFs);
+      document.removeEventListener("webkitfullscreenchange", syncFs);
+    };
+  }, []);
+
+  // Lock page scroll and allow Esc to exit when in CSS fake-fullscreen fallback
+  useEffect(() => {
+    if (!fakeFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFakeFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fakeFullscreen]);
+
+  const exitFullscreenIfActive = useCallback(() => {
+    if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
     }
-  };
+    setFakeFullscreen(false);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = stageContainerRef.current;
+    if (!el) return;
+    if (isFullscreen) {
+      exitFullscreenIfActive();
+      return;
+    }
+    const checkOrFallback = () => {
+      const fsEl =
+        document.fullscreenElement ??
+        (document as unknown as { webkitFullscreenElement?: Element | null })
+          .webkitFullscreenElement ??
+        null;
+      if (!fsEl) {
+        setFakeFullscreen(true);
+      }
+    };
+    const req =
+      el.requestFullscreen?.bind(el) ??
+      (el as unknown as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen?.bind(el);
+    if (req) {
+      const fallbackTimer = window.setTimeout(checkOrFallback, 150);
+      Promise.resolve(req())
+        .then(() => {
+          window.clearTimeout(fallbackTimer);
+          checkOrFallback();
+        })
+        .catch(() => {
+          window.clearTimeout(fallbackTimer);
+          setFakeFullscreen(true);
+        });
+    } else {
+      setFakeFullscreen(true);
+    }
+  }, [isFullscreen, exitFullscreenIfActive]);
 
   const uniqueSpeakers = useMemo(() => {
     if (!scenario) return [];
@@ -921,8 +1156,8 @@ export default function App() {
         }}
         onHoverPart={(scriptId) => {
           const ep = catalog.find((e) => e.scriptId === scriptId);
-          if (ep && settings.enable3DStage && settings.prefetchMode !== "off") {
-            prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
+          if (ep && settings.prefetchMode === "all") {
+            prewarmEpisodeCast(undefined, ep.initialBackgroundUrl);
           }
         }}
         headerExtras={
@@ -1004,8 +1239,14 @@ export default function App() {
             {/* 1. Interactive 16:9 3D Stage Canvas + Overlaid Controls & Bilingual Subtitles */}
             <div
               ref={stageContainerRef}
-              className={`relative w-full aspect-video mx-auto overflow-hidden border border-slate-800/90 bg-slate-950 shadow-2xl ${
-                settings.removeRoundedCorners || isFullscreen ? "rounded-none" : "rounded-2xl"
+              className={`cleista-stage mx-auto overflow-hidden bg-slate-950 shadow-2xl ${
+                fakeFullscreen
+                  ? "fixed inset-0 z-[1000] w-screen h-dvh rounded-none border-0"
+                  : isFullscreen
+                  ? "relative w-full h-full rounded-none border-0"
+                  : `relative w-full aspect-video border border-slate-800/90 ${
+                      settings.removeRoundedCorners ? "rounded-none" : "rounded-2xl"
+                    }`
               }`}
             >
               {/* Three.js 3D WebGL Stage */}
@@ -1014,10 +1255,44 @@ export default function App() {
                 cameraMode={settings.cameraMode}
                 enable3D={settings.enable3DStage}
                 resolution={settings.stageResolution}
+                paused={tabHiddenPaused}
+                obscured={sidebarOpen || creditsOpen}
                 audioMixer={AudioMixer}
                 onAdvance={handleStageOrKeyAdvance}
                 onStageReady={setStageReadyTurn}
+                onLoadProgress={setStageLoadProgress}
               />
+
+              {/* Cleista initial episode black cover (#stageFullcolor) + centered spinner (#stageLoader) */}
+              <div
+                id="stageFullcolor"
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-[18] bg-black transition-opacity duration-1000"
+                style={{
+                  opacity: !firstTurnReady || Boolean(scenarioLoadingSlug) ? 1 : 0,
+                }}
+              />
+              {(!firstTurnReady || Boolean(scenarioLoadingSlug)) && (
+                <div
+                  id="stageLoader"
+                  aria-label="Loading stage"
+                  className="pointer-events-none absolute inset-0 z-[19] flex items-center justify-center"
+                >
+                  <div className="h-9 w-9 rounded-full border-2 border-white/20 border-t-[#7c9ff5] animate-spin" />
+                </div>
+              )}
+
+              {/* Cleista top-center loading status pill (#stageJpLoading) */}
+              {visibleStatusPill && (
+                <div
+                  id="stageJpLoading"
+                  role="status"
+                  aria-live="polite"
+                  className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-30 rounded-full bg-black/55 border border-white/20 backdrop-blur-md px-3.5 py-1 text-[13px] font-medium text-[#f1f3f4] shadow-lg whitespace-nowrap"
+                >
+                  {visibleStatusPill}
+                </div>
+              )}
 
               {/* Floating White Pill Controls on Stage Canvas (exact pjsk.cleista.cc layout) */}
               <div className="absolute top-3.5 inset-x-4 z-20 flex items-center justify-between gap-2 pointer-events-none">
@@ -1027,6 +1302,9 @@ export default function App() {
                   aria-label={`Back to ${scenario.episode.seriesTitleEn}`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (isFullscreen) {
+                      exitFullscreenIfActive();
+                    }
                     setSidebarOpen((v) => !v);
                   }}
                   className="pointer-events-auto h-9 px-5 rounded-full bg-white/95 hover:bg-white text-slate-900 shadow-lg flex items-center justify-center transition"
@@ -1082,6 +1360,7 @@ export default function App() {
                   </button>
 
                   <button
+                    id="settingsToggleBtn"
                     type="button"
                     aria-label="Reader settings"
                     aria-expanded={settingsOpen}
@@ -1100,6 +1379,7 @@ export default function App() {
                   </button>
 
                   <button
+                    id="fullscreenBtn"
                     type="button"
                     aria-label="Toggle fullscreen"
                     onClick={(e) => {
@@ -1117,6 +1397,160 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Cleista Fullscreen-Only Left/Right Vertical-Center Prev/Next Buttons (#stagePrev / #stageNext) */}
+              {isFullscreen && (
+                <>
+                  <button
+                    id="stagePrev"
+                    type="button"
+                    aria-label="Previous line"
+                    disabled={currentTurnIndex === 0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrev();
+                    }}
+                    className="cleista-stage-nav-btn cleista-stage-nav-prev"
+                    title="Previous line"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    id="stageNext"
+                    type="button"
+                    aria-label="Next line"
+                    disabled={!stageReady || currentTurnIndex >= scenario.turns.length - 1}
+                    aria-busy={!stageReady}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNext();
+                    }}
+                    className="cleista-stage-nav-btn cleista-stage-nav-next"
+                    title={stageReady ? "Next line" : "Loading this line's stage…"}
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+
+              {/* Cleista On-Stage Floating Settings Popover in Fullscreen (#stageSettingsPanel) */}
+              {isFullscreen && settingsOpen && (
+                <div
+                  id="stageSettingsPanel"
+                  role="dialog"
+                  aria-label="Reader settings"
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute top-14 right-4 z-30 max-w-[min(540px,calc(100%-2rem))] max-h-[calc(100%-4.5rem)] overflow-y-auto rounded-2xl border border-white/20 bg-black/75 backdrop-blur-xl p-4 text-xs text-slate-200 shadow-2xl space-y-3.5"
+                >
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-300">Text speed:</span>
+                      <input
+                        type="range"
+                        aria-label="Text reveal speed (1x to 5x)"
+                        min={1}
+                        max={5}
+                        step={1}
+                        value={settings.textSpeed}
+                        onChange={(e) =>
+                          setSettings((s) => ({
+                            ...s,
+                            textSpeed: parseInt(e.target.value, 10),
+                          }))
+                        }
+                        className="w-24 accent-[#58a6ff]"
+                      />
+                      <span className="font-semibold text-white w-6">{settings.textSpeed}x</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-300">Second language:</span>
+                      <select
+                        aria-label="Second language:"
+                        value={settings.showSecondaryLanguage ? "jp" : "off"}
+                        onChange={(e) =>
+                          setSettings((s) => ({
+                            ...s,
+                            showSecondaryLanguage: e.target.value === "jp",
+                          }))
+                        }
+                        className="rounded-lg border border-white/20 bg-slate-900/90 px-2 py-1 text-slate-100"
+                      >
+                        <option value="off">Off</option>
+                        <option value="jp">日本語 (JP)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-300">Translation:</span>
+                      <select
+                        aria-label="Translation source:"
+                        value={settings.primaryTranslationId}
+                        onChange={(e) =>
+                          setSettings((s) => ({
+                            ...s,
+                            primaryTranslationId: e.target.value,
+                          }))
+                        }
+                        className="rounded-lg border border-white/20 bg-slate-900/90 px-2 py-1 text-slate-100"
+                      >
+                        {scenario.translationSources.map((src) => (
+                          <option key={src.id} value={src.id}>
+                            {src.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.showFurigana}
+                        onChange={(e) =>
+                          setSettings((s) => ({ ...s, showFurigana: e.target.checked }))
+                        }
+                        className="accent-[#58a6ff] h-4 w-4 rounded"
+                      />
+                      <span>Show Furigana</span>
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.enable3DStage}
+                        onChange={(e) =>
+                          setSettings((s) => ({ ...s, enable3DStage: e.target.checked }))
+                        }
+                        className="accent-[#58a6ff] h-4 w-4 rounded"
+                      />
+                      <span>3D characters</span>
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-300">3D resolution:</span>
+                      <select
+                        aria-label="3D resolution:"
+                        value={settings.stageResolution}
+                        onChange={(e) =>
+                          setSettings((s) => ({
+                            ...s,
+                            stageResolution: e.target.value as StageResolution,
+                          }))
+                        }
+                        className="rounded-lg border border-white/20 bg-slate-900/90 px-2 py-1 text-slate-100"
+                      >
+                        <option value="auto">Auto</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="ultra">Ultra</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Optional Stage Debug Info Overlay (toggled in Reading Settings) */}
               {settings.showDebugInfo && (
@@ -1158,34 +1592,40 @@ export default function App() {
                 </div>
               )}
 
-              {/* Frameless Text-Stroke Bilingual Subtitle Overlay on Stage (pjsk.cleista.cc style) */}
+              {/* Frameless Text-Stroke Bilingual Subtitle Overlay on Stage (exact pjsk.cleista.cc container-query scaling) */}
               <div
                 onClick={handleStageOrKeyAdvance}
-                className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-slate-950/75 via-slate-950/35 to-transparent pt-10 pb-5 px-6 sm:px-10 cursor-pointer"
+                style={{
+                  visibility:
+                    !firstTurnReady || (!stageReady && lastTurnNavKindRef.current === "seek")
+                      ? "hidden"
+                      : "visible",
+                }}
+                className="cleista-dialogue-overlay z-20 bg-gradient-to-t from-slate-950/75 via-slate-950/35 to-transparent cursor-pointer"
               >
                 <div
-                  className={`max-w-4xl mx-auto grid gap-6 ${
+                  className={`cleista-dialogue-grid ${
                     showDualCanvasSubtitles && settings.subtitleLayout === "side-by-side"
-                      ? "grid-cols-1 md:grid-cols-2"
-                      : "grid-cols-1"
+                      ? "is-dual"
+                      : ""
                   }`}
                 >
                   {/* Left: Primary Language (Translation) with Speaker Underline Accent */}
                   <div>
                     {(activeTranslation.speaker || currentTurn.speakerEn) && (
-                      <div className="mb-1.5">
-                        <span className="inline-block text-base sm:text-lg font-bold text-white cleista-speaker-stroke">
+                      <div>
+                        <span className="cleista-speaker-text inline-block font-bold text-white cleista-speaker-stroke">
                           {activeTranslation.speaker || currentTurn.speakerEn}
                         </span>
                         <div
-                          className="h-[3px] w-20 rounded-full mt-0.5 shadow-sm"
+                          className="cleista-speaker-underline shadow-sm"
                           style={{
                             backgroundColor: currentTurn.characterColor || "#94a3b8",
                           }}
                         />
                       </div>
                     )}
-                    <p className="text-base sm:text-lg md:text-[21px] font-semibold text-white leading-snug whitespace-pre-wrap cleista-stroke">
+                    <p className="cleista-line-text font-semibold text-white whitespace-pre-wrap cleista-stroke">
                       {activeTranslation.text.slice(0, revealedChars)}
                     </p>
                   </div>
@@ -1194,12 +1634,12 @@ export default function App() {
                   {showDualCanvasSubtitles && (
                     <div className="font-jp">
                       {currentTurn.speakerJp && (
-                        <div className="mb-1.5">
-                          <span className="inline-block text-base sm:text-lg font-bold text-white cleista-speaker-stroke">
+                        <div>
+                          <span className="cleista-speaker-text inline-block font-bold text-white cleista-speaker-stroke">
                             {currentTurn.speakerJp}
                           </span>
                           <div
-                            className="h-[3px] w-20 rounded-full mt-0.5 shadow-sm"
+                            className="cleista-speaker-underline shadow-sm"
                             style={{
                               backgroundColor: currentTurn.characterColor || "#94a3b8",
                             }}
@@ -1213,7 +1653,7 @@ export default function App() {
                         tags={scenario.lexTags ?? {}}
                         showFurigana={settings.showFurigana}
                         maxChars={revealedChars}
-                        className="text-base sm:text-lg md:text-[21px] font-semibold text-white cleista-stroke"
+                        className="cleista-line-text block font-semibold text-white cleista-stroke"
                       />
                     </div>
                   )}

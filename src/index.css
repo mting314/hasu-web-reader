@@ -74,3 +74,92 @@ ruby > rt {
   animation: cleistaTapRipple 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   z-index: 25;
 }
+
+/* Cleista container-query stage & subtitle layout (reader.css) */
+.cleista-stage {
+  container-type: size;
+  container-name: reader-stage;
+}
+
+.cleista-dialogue-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2.5rem 7% 5%;
+}
+
+.cleista-dialogue-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 540px) {
+  .cleista-dialogue-grid.is-dual {
+    grid-template-columns: 1fr 1fr;
+    gap: 4.2cqmin;
+  }
+}
+
+.cleista-speaker-text {
+  font-size: clamp(14px, 3cqmin, 42px);
+  line-height: 1.25;
+}
+
+.cleista-speaker-underline {
+  height: clamp(2.5px, 1cqmin, 10px);
+  width: clamp(4.5rem, 15cqw, 11rem);
+  border-radius: 9999px;
+  margin-top: 0.35cqmin;
+}
+
+.cleista-line-text {
+  font-size: clamp(15px, 3cqmin, 42px);
+  line-height: 1.55;
+  min-height: calc(1.55em * 3);
+  margin-top: 1.2cqmin;
+}
+
+/* Cleista fullscreen side Prev/Next buttons (.stage-nav-btn) */
+.cleista-stage-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 22;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.38;
+  transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.cleista-stage-nav-btn:hover:not(:disabled),
+.cleista-stage-nav-btn:focus-visible:not(:disabled) {
+  opacity: 0.95;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.cleista-stage-nav-btn:disabled {
+  opacity: 0.12;
+  cursor: default;
+}
+
+.cleista-stage-nav-prev {
+  left: clamp(6px, 2.5cqw, 22px);
+}
+
+.cleista-stage-nav-next {
+  right: clamp(6px, 2.5cqw, 22px);
+}
+
