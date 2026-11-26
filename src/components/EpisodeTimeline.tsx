@@ -80,77 +80,15 @@ export const EpisodeTimeline: React.FC<{
               </div>
             </div>
 
-            {/* horizontal timeline: thumbnail above each node, PART n below */}
-            <div className="relative overflow-x-auto px-4 pb-3">
-              <div className="flex gap-3">
-                {s.parts.map((p) => {
-                  const ep = byScript.get(p.scriptId);
-                  const selected = p.scriptId === activeScriptId;
-                  const num = p.label.replace(/^PART\s*/i, "");
-                  const isPartN = /^PART\s*\d+$/i.test(p.label);
-                  return (
-                    <button
-                      key={p.scriptId}
-                      type="button"
-                      disabled={!ep}
-                      onClick={() => ep && onSelect(ep)}
-                      onMouseEnter={() => ep && onPrewarm(ep)}
-                      onFocus={() => ep && onPrewarm(ep)}
-                      title={ep ? ep.partTitleEn : `${p.label}: not in the reader yet`}
-                      className="group relative flex min-w-[9.5rem] flex-1 basis-0 flex-col items-center text-center disabled:cursor-not-allowed"
-                    >
-                      <div
-                        className={`relative aspect-[828/238] w-full overflow-hidden rounded-xl border transition ${
-                          selected
-                            ? "border-[#9db8ff] shadow-[0_0_18px_rgba(124,159,245,0.45)]"
-                            : ep
-                              ? "border-slate-700 group-hover:border-[#7c9ff5]/80"
-                              : "border-slate-800"
-                        }`}
-                      >
-                        {!p.thumbnail && <span className="absolute inset-0 bg-slate-900" />}
-                        {p.thumbnail && (
-                          <img
-                            src={assetUrl(p.thumbnail)}
-                            alt=""
-                            loading="lazy"
-                            className={`h-full w-full object-cover transition ${ep ? "group-hover:scale-[1.03]" : "opacity-35 grayscale"}`}
-                          />
-                        )}
-                        {!ep && (
-                          <span className="absolute inset-0 flex items-center justify-center text-slate-400">
-                            <Lock className="h-4 w-4" />
-                          </span>
-                        )}
-                      </div>
-                      {/* node on the line; each column draws its stretch of the line (bridging the gap) */}
-                      <span aria-hidden="true" className="relative mt-1.5 flex w-full justify-center">
-                        <span className="absolute -left-1.5 -right-1.5 top-1/2 h-0.5 -translate-y-1/2 bg-[#7c9ff5]/50" />
-                      <span
-                        className={`relative z-10 h-[15px] w-[15px] rounded-full border-2 ${
-                          selected
-                            ? "border-[#9db8ff] bg-[#9db8ff]"
-                            : ep
-                              ? "border-[#7c9ff5] bg-slate-950 group-hover:bg-[#7c9ff5]/40"
-                              : "border-slate-600 bg-slate-950"
-                        }`}
-                      />
-                      </span>
-                      <span className={`mt-1 font-bold ${ep ? "text-[#9db8ff]" : "text-slate-500"}`}>
-                        {isPartN ? (
-                          <>
-                            <span className="text-[10px] tracking-wider">PART</span>
-                            <span className="ml-0.5 text-lg leading-none">{num}</span>
-                          </>
-                        ) : (
-                          <span className="text-xs">{p.label}</span>
-                        )}
-                      </span>
-                      {ep && <span className="mt-0.5 text-[11px] text-slate-400">{formatDuration(ep.totalDurationSec)}</span>}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="px-4 pb-3">
+              <PartTimeline
+                series={s}
+                catalogByScript={byScript}
+                activeScriptId={activeScriptId}
+                onSelect={onSelect}
+                onPrewarm={onPrewarm}
+                formatDuration={formatDuration}
+              />
             </div>
           </section>
         );
@@ -158,3 +96,88 @@ export const EpisodeTimeline: React.FC<{
     </div>
   );
 };
+
+/**
+ * One series' parts as a horizontal timeline: the part's thumbnail above its node on the line,
+ * "PART n" below. Parts the reader has (in the catalog) are clickable; the others are shown locked.
+ */
+export const PartTimeline: React.FC<{
+  series: StoryIndexSeries;
+  catalogByScript: Map<string, EpisodeSummary>;
+  activeScriptId: string | null;
+  onSelect: (ep: EpisodeSummary) => void;
+  onPrewarm: (ep: EpisodeSummary) => void;
+  formatDuration: (sec: number) => string;
+}> = ({ series: s, catalogByScript: byScript, activeScriptId, onSelect, onPrewarm, formatDuration }) => (
+  <div className="relative overflow-x-auto">
+    <div className="flex gap-3">
+      {s.parts.map((p) => {
+          const ep = byScript.get(p.scriptId);
+          const selected = p.scriptId === activeScriptId;
+          const num = p.label.replace(/^PART\s*/i, "");
+          const isPartN = /^PART\s*\d+$/i.test(p.label);
+          return (
+            <button
+              key={p.scriptId}
+              type="button"
+              disabled={!ep}
+              onClick={() => ep && onSelect(ep)}
+              onMouseEnter={() => ep && onPrewarm(ep)}
+              onFocus={() => ep && onPrewarm(ep)}
+              title={ep ? ep.partTitleEn : `${p.label}: not in the reader yet`}
+              className="group relative flex min-w-[9.5rem] flex-1 basis-0 flex-col items-center text-center disabled:cursor-not-allowed"
+            >
+              <div
+                className={`relative aspect-[828/238] w-full overflow-hidden rounded-xl border transition ${
+                  selected
+                    ? "border-[#9db8ff] shadow-[0_0_18px_rgba(124,159,245,0.45)]"
+                    : ep
+                      ? "border-slate-700 group-hover:border-[#7c9ff5]/80"
+                      : "border-slate-800"
+                }`}
+              >
+                {!p.thumbnail && <span className="absolute inset-0 bg-slate-900" />}
+                {p.thumbnail && (
+                  <img
+                    src={assetUrl(p.thumbnail)}
+                    alt=""
+                    loading="lazy"
+                    className={`h-full w-full object-cover transition ${ep ? "group-hover:scale-[1.03]" : "opacity-35 grayscale"}`}
+                  />
+                )}
+                {!ep && (
+                  <span className="absolute inset-0 flex items-center justify-center text-slate-400">
+                    <Lock className="h-4 w-4" />
+                  </span>
+                )}
+              </div>
+              {/* node on the line; each column draws its stretch of the line (bridging the gap) */}
+              <span aria-hidden="true" className="relative mt-1.5 flex w-full justify-center">
+                <span className="absolute -left-1.5 -right-1.5 top-1/2 h-0.5 -translate-y-1/2 bg-[#7c9ff5]/50" />
+              <span
+                className={`relative z-10 h-[15px] w-[15px] rounded-full border-2 ${
+                  selected
+                    ? "border-[#9db8ff] bg-[#9db8ff]"
+                    : ep
+                      ? "border-[#7c9ff5] bg-slate-950 group-hover:bg-[#7c9ff5]/40"
+                      : "border-slate-600 bg-slate-950"
+                }`}
+              />
+              </span>
+              <span className={`mt-1 font-bold ${ep ? "text-[#9db8ff]" : "text-slate-500"}`}>
+                {isPartN ? (
+                  <>
+                    <span className="text-[10px] tracking-wider">PART</span>
+                    <span className="ml-0.5 text-lg leading-none">{num}</span>
+                  </>
+                ) : (
+                  <span className="text-xs">{p.label}</span>
+                )}
+              </span>
+              {ep && <span className="mt-0.5 text-[11px] text-slate-400">{formatDuration(ep.totalDurationSec)}</span>}
+            </button>
+          );
+        })}
+    </div>
+  </div>
+);

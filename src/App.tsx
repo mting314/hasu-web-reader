@@ -32,8 +32,7 @@ import {
 } from "./components/StageCanvas";
 import { JapaneseLookupText } from "./components/JapaneseLookupText";
 import { CreditsPanel } from "./components/CreditsPanel";
-import { EpisodeTimeline } from "./components/EpisodeTimeline";
-import type { StoryIndex } from "./types/storyIndex";
+import { StorySelector } from "./components/StorySelector";
 import { episodePartLabel, scriptIdFromSlug, slugForScriptId } from "./storySlug";
 import { rewriteAssetUrls } from "./remoteAssets";
 
@@ -97,7 +96,6 @@ function translateSceneComment(commentJp: string | null): string {
 
 export default function App() {
   const [catalog, setCatalog] = useState<EpisodeSummary[]>([]);
-  const [storyIndex, setStoryIndex] = useState<StoryIndex | null>(null);
   const [activeScriptId, setActiveScriptId] = useState<string>(() => scriptIdFromUrl() ?? "10300101");
   const [scenario, setScenario] = useState<ScenarioData | null>(null);
   const [currentTurnIndex, setCurrentTurnIndex] = useState<number>(() => {
@@ -167,14 +165,6 @@ export default function App() {
   autoPlayRef.current = autoPlay;
   const autoJustEnabledRef = useRef(false);
   const pausedByHiddenTabRef = useRef(false);
-
-  // The game's activity-record index (series, parts, thumbnails) behind the episode timeline
-  useEffect(() => {
-    fetch("/data/story_index.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setStoryIndex(d))
-      .catch(() => setStoryIndex(null));
-  }, []);
 
   // Load episode catalog
   useEffect(() => {
@@ -478,6 +468,7 @@ export default function App() {
   // Keyboard navigation (Right/Space = two-stage advance, Left = Prev)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (sidebarOpen || creditsOpen) return; // an overlay (story selector, credits) has the keys
       if (
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "SELECT"
@@ -494,7 +485,19 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleStageOrKeyAdvance, handlePrev]);
+  }, [handleStageOrKeyAdvance, handlePrev, sidebarOpen, creditsOpen]);
+
+  // The story selector covers the reader: auto mode pauses while it's open and resumes after.
+  const pausedBySelectorRef = useRef(false);
+  useEffect(() => {
+    if (sidebarOpen && autoPlayRef.current) {
+      pausedBySelectorRef.current = true;
+      setAutoPlay(false);
+    } else if (!sidebarOpen && pausedBySelectorRef.current) {
+      pausedBySelectorRef.current = false;
+      setAutoPlay(true);
+    }
+  }, [sidebarOpen]);
 
   const toggleFullscreen = () => {
     if (!stageContainerRef.current) return;
@@ -905,53 +908,46 @@ export default function App() {
         </div>
       </header>
 
-      {/* Collapsible Episode Selection Drawer */}
-      {sidebarOpen && (
-        <div className="border-b border-slate-800 bg-[#0d1420]/95 px-4 py-3.5 backdrop-blur-md">
-          <div className="max-w-5xl mx-auto">
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[#9db8ff]">
-                Activity Record Episodes · Local Zero-GCS Cache
-              </span>
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCreditsOpen(true);
-                    setSidebarOpen(false);
-                  }}
-                  className="text-xs text-slate-300 hover:text-white underline decoration-dotted"
-                >
-                  Contributors & Credits
-                </button>
-                <a
-                  href="https://introtohasu.carrd.co/#watchorder"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-sky-400 hover:underline"
-                >
-                  IntroToHasu Watch Order <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-            </div>
-            <EpisodeTimeline
-              series={storyIndex?.series ?? []}
-              catalog={catalog}
-              activeScriptId={activeScriptId}
-              formatDuration={formatMmSs}
-              onPrewarm={(ep) => {
-                if (settings.enable3DStage && settings.prefetchMode !== "off") {
-                  prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
-                }
-              }}
-              onSelect={(ep) => {
-                setActiveScriptId(ep.scriptId);
+      {/* Story selector, modelled on the game's 活動記録 screen */}
+      <StorySelector
+        open={sidebarOpen}
+        currentScriptId={activeScriptId}
+        catalog={catalog}
+        formatDuration={formatMmSs}
+        onClose={() => setSidebarOpen(false)}
+        onSelect={(scriptId) => {
+          setActiveScriptId(scriptId);
+          setSidebarOpen(false);
+        }}
+        onHoverPart={(scriptId) => {
+          const ep = catalog.find((e) => e.scriptId === scriptId);
+          if (ep && settings.enable3DStage && settings.prefetchMode !== "off") {
+            prewarmEpisodeCast(ep.castCharacters, ep.initialBackgroundUrl);
+          }
+        }}
+        headerExtras={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setCreditsOpen(true);
                 setSidebarOpen(false);
               }}
-            />
-          </div>
-        </div>
-      )}
+              className="text-xs text-slate-300 hover:text-white underline decoration-dotted"
+            >
+              Contributors & Credits
+            </button>
+            <a
+              href="https://introtohasu.carrd.co/#watchorder"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-sky-400 hover:underline"
+            >
+              IntroToHasu Watch Order <ExternalLink className="w-3 h-3" />
+            </a>
+          </>
+        }
+      />
 
       {/* Main Reader Container */}
       <main
