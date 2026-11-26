@@ -472,11 +472,24 @@ A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored i
   12-byte (offset, length, segment) entries; each pass's `m_PlayerSubPrograms` maps keyword sets to
   blob indices. `pjskMaterial.ts` feeds material values from `extras.unity` and neutral `_Sekai*`
   stage globals (the story light is shared with the Hasu toon shader).
-- Not done yet: Toon-v3's `_UseFaceSDF` / `_HAIR_SHADOW` variants (they read
-  `_HeadDotDirectionalLightValues`, set on the CPU by code not found yet; everything uses the
-  `_LAMBERT` Base variant), the outline (the Outline pass doesn't inflate the mesh: PJSK draws
-  outlines from its extra render targets later), the Eyelash pass, spring bones (UTJ
-  `SpringManager`), helper bones (`*ArmRoll`, `*EllbowSupport`).
+- Each pass's `m_PlayerSubPrograms` mixes GLES3 (`m_GpuProgramType` 4) and SPIR-V (25)
+  subprograms; a SPIR-V one's blob index points into the Vulkan blob (platform 18). Toon-v3's
+  **Outline pass is Vulkan-only**: `scripts/pjsk_spirv.py` decodes Unity's SMOL-V streams (a port
+  of aras-p/smol-v's decoder; locally built binaries can't run on this machine) and disassembles
+  them with Khronos's grammar JSON; uniform names come from the pass's parameter blob
+  (`m_ParameterBlobIndices`, name + byte offset). The outline is ported onto the GLES3 Base program
+  by the converter (normal or `_OUTLINE_SECOND_NORMAL` tangent-space direction from uv1/uv2,
+  camera-distance width from `_SekaiOutlineWidth/_SekaiOutlineFactor`, colour
+  `mix(outlineColor, lit, blending)`).
+- CPU-side values, all from the game's code (JP RVAs in `pjskMaterial.ts`): face SDF
+  (`CharacterModel.SetupFaceShadowAction`; PJSK's light transform points *at* the light, see
+  `SekaiDirectionalLight.Update`), `_FaceFront`, hair `_HeadPosition` (`SekaiCharacterHair`), outline
+  globals (`SekaiCharacterOutlinePass.UpdateOutline` + the renderer's `SekaiCharacterOutlineFeature`
+  settings in the APK's `globalgamemanagers.assets`), ambient/outline colour defaults
+  (`SekaiCharacterAmbientLight` .ctor/Reset).
+- Not done yet: the stage `SekaiDirectionalLight` shadow colour/threshold (still Cleista's
+  0.40625), the Eyelash pass, spring bones (UTJ `SpringManager`), helper bones (`*ArmRoll`,
+  `*EllbowSupport`).
 - Export gotcha (fixed in `export_costume.py`): lossless WebP drops RGB under alpha 0 unless saved
   with `exact=True`; PJSK's `_ValueTex` (and possibly Hasu control maps) store data there.
 
