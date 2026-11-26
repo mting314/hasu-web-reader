@@ -47,11 +47,11 @@
         "characters": 2,
         "backgrounds": 12,
         "props": 3,
-        "motions": 101,
+        "motions": 100,
         "bgm": 4,
         "se": 7,
         "voices": 95,
-        "total": 224
+        "total": 223
       },
       "castCharacters": [
         {

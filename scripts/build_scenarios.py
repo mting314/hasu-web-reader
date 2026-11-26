@@ -230,7 +230,8 @@ def motion_start(
     The player plays a motion's opening only when the motion starts on screen. A snapshot alone
     can't say that (the same motion can be started again, and a jump lands mid-motion), so each
     start is identified by its script line and the turn it falls in (commands before the first
-    message belong to turn 0). How it starts comes from the command's arguments, as the game reads
+    message belong to turn 0; commands after a line's last wait belong to the next line, which
+    compile_script patches in when that line's message arrives). How it starts comes from the command's arguments, as the game reads
     them (CLAUDE.md, "Story motions"):
       キャラモーション再生 <char> <mot> <playType> [breathing]
       キャラモーション即時再生 <char> <mot> <playType> <normalizedTime>
@@ -377,21 +378,112 @@ def compile_script(
             return {"characterState": copy.deepcopy(state["characters"][ev["character"]])}
         return {}
 
+    # Where a command lands. The game's story is one timeline: a voiced message doesn't block
+    # (MessageCommand.IsWaitPlayEnd, RVA 0x413A9C0, is false); only `待機` and `完了待ち` fades
+    # advance it. Tapping "next" (StoryUIWindow.OnClickMessageArea, RVA 0x41724A8) skips to the
+    # next message command's line. So the commands after a line's last wait run when the *next*
+    # message appears: they're held in `tail` until we know whether time passes before the next
+    # message (they stay in this line) or not (they open the next line).
+    tail: list[dict[str, Any]] = []
+
+    def anim_fields(s: dict[str, Any]) -> dict[str, Any]:
+        """The stage values a timed command animates, keyed by the field it changes."""
+        return copy.deepcopy({
+            "camera.position": s["camera"]["position"],
+            "camera.rotation": s["camera"]["rotation"],
+            "background.position": s["background"]["position"],
+            "fade": s["fade"],
+            **{f"characters.{n}.position": c["position"] for n, c in s["characters"].items()},
+        })
+
+    def anim_field_of(ev: dict[str, Any]) -> str | None:
+        t = ev["type"]
+        if t == "camera_move":
+            return "camera.position"
+        if t == "camera_rotate":
+            return "camera.rotation"
+        if t == "bg_move":
+            return "background.position"
+        if t == "fade":
+            return "fade"
+        if t == "char_move":
+            return f"characters.{ev['character']}.position"
+        return None
+
+    def set_field(s: dict[str, Any], field: str, value: Any) -> None:
+        *path, leaf = field.split(".")
+        node = s
+        for key in path:
+            node = node.get(key)
+            if node is None:
+                return
+        node[leaf] = copy.deepcopy(value)
+
+    # Values before each command (for timed commands, where their animation starts); timed
+    # commands of the current line's opening, by field: the value the animation starts from.
+    prev_anim = anim_fields(state)
+    anim_start: dict[int, Any] = {}
+    line_start_overrides: dict[str, Any] = {}
+
+    def add_line_start_event(turn: dict[str, Any], ev: dict[str, Any]) -> None:
+        """A command of the line's opening moment (with its message, before its first wait).
+
+        Instant changes fold into the line's starting snapshot. One-shot sounds and mouth flaps
+        carry no state, so they're scheduled at offset 0 or they would never play. Timed
+        changes (pans, moves, fades) are scheduled at offset 0 too, and the snapshot keeps the
+        value they start from, so they play out instead of cutting to their end.
+        """
+        ev["turnOffsetSec"] = 0.0
+        field = anim_field_of(ev)
+        if field and float(ev.get("duration") or 0) > 0:
+            line_start_overrides[field] = anim_start.get(id(ev))
+            turn["intraEvents"].append(ev)
+        else:
+            if field:
+                line_start_overrides.pop(field, None)
+            if (ev["type"] == "se_play" and not ev.get("loop")) or ev["type"] == "char_lip":
+                turn["intraEvents"].append(ev)
+        snap = copy.deepcopy(state)
+        for f, value in line_start_overrides.items():
+            if value is not None:
+                set_field(snap, f, value)
+        turn["stateBefore"] = snap
+        turn["stateAfter"] = copy.deepcopy(state)
+
     def attach_event(ev: dict[str, Any]) -> None:
+        nonlocal prev_anim
         ev["timestampSec"] = round(clock_sec, 3)
         ev["turnOffsetSec"] = round(turn_elapsed_sec, 3)
         ev.update(event_state(ev))
-        if turns:
-            if turn_elapsed_sec == 0.0:
-                # Command occurs on the exact same frame (t=0) as the dialogue line: fold it
-                # into the line's starting snapshot. One-shot sounds and mouth flaps carry no
-                # state, so they still need to be scheduled (at offset 0) or they would never play.
-                turns[-1]["stateBefore"] = copy.deepcopy(state)
-                if (ev["type"] == "se_play" and not ev.get("loop")) or ev["type"] == "char_lip":
-                    turns[-1]["intraEvents"].append(ev)
-            else:
-                turns[-1]["intraEvents"].append(ev)
+        field = anim_field_of(ev)
+        if field:
+            anim_start[id(ev)] = prev_anim.get(field)
+        prev_anim = anim_fields(state)
+        if not turns:
+            pending_events.append(ev)
+        elif turn_elapsed_sec == 0.0:
+            add_line_start_event(turns[-1], ev)
+        else:
+            tail.append(ev)
+
+    def flush_tail() -> None:
+        """Time passes before the next message: the held commands run mid-line."""
+        if turns and tail:
+            turns[-1]["intraEvents"].extend(tail)
             turns[-1]["stateAfter"] = copy.deepcopy(state)
+        tail.clear()
+
+    def advance_time(sec: float) -> None:
+        """`待機` or a `完了待ち` fade: the timeline moves on by `sec`."""
+        nonlocal clock_sec, turn_elapsed_sec
+        flush_tail()
+        ev = {"type": "wait", "seconds": sec, "timestampSec": round(clock_sec, 3),
+              "turnOffsetSec": round(turn_elapsed_sec, 3)}
+        clock_sec += sec
+        turn_elapsed_sec += sec
+        if turns:
+            turns[-1]["durationSec"] = round(turns[-1]["durationSec"] + sec, 3)
+            turns[-1]["intraEvents"].append(ev)
         else:
             pending_events.append(ev)
 
@@ -460,7 +552,8 @@ def compile_script(
                 "tears": False,
                 "attachedProps": [],
             }
-            attach_event({"type": "char_spawn", "character": char_name, "costumeId": costume_id, "position": pos, "rotation": rot})
+            attach_event({"type": "char_spawn", "character": char_name, "costumeId": costume_id, "position": pos, "rotation": rot,
+                          "motionCmd": state["characters"][char_name]["motionCmd"]})
             continue
 
         if cmd == "キャラ非表示" and args:
@@ -749,9 +842,10 @@ def compile_script(
             )
             hex_color = "#ffffff" if rgb == [255, 255, 255] else "#000000"
             state["fade"] = {"active": is_in, "color": hex_color, "duration": dur}
-            if "完了待ち" in arg_str:
-                clock_sec += dur
             attach_event({"type": "fade", "command": cmd, "active": is_in, "color": hex_color, "duration": dur})
+            # `完了待ち`: the timeline waits for the fade (TransitionCommand.IsWaitPlayEnd)
+            if "完了待ち" in arg_str and dur > 0:
+                advance_time(dur)
             continue
 
         # 7. Audio (BGM & SE)
@@ -798,12 +892,7 @@ def compile_script(
 
         # 8. Wait
         if cmd == "待機" and len(args) >= 2 and args[0] == "秒数指定":
-            sec = float(args[1])
-            clock_sec += sec
-            turn_elapsed_sec += sec
-            if turns:
-                turns[-1]["durationSec"] = round(turns[-1]["durationSec"] + sec, 3)
-            attach_event({"type": "wait", "seconds": sec})
+            advance_time(float(args[1]))
             continue
 
         # 9. Dialogue / Narration Turns
@@ -895,7 +984,20 @@ def compile_script(
             }
             pending_events = []
             turns.append(turn_obj)
+            # The commands since the previous line's last wait run as this message appears: they
+            # open this line (a motion among them starts on this line, not the one before).
+            line_start_overrides.clear()
+            opening = list(tail)
+            tail.clear()
+            for ev in opening:
+                c = state["characters"].get(ev.get("character") or "")
+                if ev.get("motionCmd") and c and c.get("motionCmd") == ev["motionCmd"]:
+                    c["motionStartTurn"] = idx
+            for ev in opening:
+                add_line_start_event(turn_obj, ev)
             continue
+
+    flush_tail()  # commands after the last line's final wait
 
     # Compute sub-clip start/end offsets for consecutive turns sharing the same voiceId
     i = 0
