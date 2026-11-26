@@ -14,11 +14,13 @@ the programs only take dot products and transforms within one consistent space).
 
 Variants (by the material keywords the exported models use):
   TOON       Hidden/Sekai/Live/Character/Toon-v3, pass Base, _LAMBERT
+  FACE       … _LAMBERT _UseFaceSDF (reads _HeadDotDirectionalLightValues, set on the CPU)
+  HAIR       … _HAIR_SHADOW _LAMBERT (reads _HeadPosition, set on the CPU)
   EYE        Sekai/Live/Character/Eye-Base, pass Base
   HIGHLIGHT  Sekai/Live/Character/Eye-Highlight, pass Base
-Not converted yet: Toon-v3's _UseFaceSDF and _HAIR_SHADOW variants (they read per-frame values the
-game computes on the CPU, `_HeadDotDirectionalLightValues`, not traced yet) and the Outline /
-Eyelash passes (the outline is drawn from the extra render targets, not by an inflated mesh).
+The CPU-side values are computed in src/engine/castSwap/pjskMaterial.ts (from the game's code).
+Not converted yet: the Outline / Eyelash passes (the outline is drawn from the extra render targets,
+not by an inflated mesh).
 
 Usage: uv run python -I scripts/pjsk_shader_to_glsl.py data-inspect/pjsk/bundles/shader/live
        [--out src/engine/shaders/pjskToonGame.ts]
@@ -43,6 +45,8 @@ GLES3 = 9  # ShaderCompilerPlatform.GLES3x
 VARIANTS = {
     # output name -> (shader, pass, keywords)
     "TOON": ("Hidden/Sekai/Live/Character/Toon-v3", "Base", {"_LAMBERT"}),
+    "FACE": ("Hidden/Sekai/Live/Character/Toon-v3", "Base", {"_LAMBERT", "_UseFaceSDF"}),
+    "HAIR": ("Hidden/Sekai/Live/Character/Toon-v3", "Base", {"_HAIR_SHADOW", "_LAMBERT"}),
     "EYE": ("Sekai/Live/Character/Eye-Base", "Base", set()),
     "HIGHLIGHT": ("Sekai/Live/Character/Eye-Highlight", "Base", set()),
 }

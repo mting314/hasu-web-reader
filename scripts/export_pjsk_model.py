@@ -187,6 +187,31 @@ class PjskModelExporter(CostumeExporter):
             if (obj.assets_file.name, tr["m_PathID"]) in self.node_of:
                 yield obj
 
+    def character_hair(self) -> None:
+        """Sekai.Rendering.SekaiCharacterHair on the hair renderer: each update (OnUpdate, JP RVA
+        0xA81CD18) sets the hair materials' _HeadPosition = headTransform.TransformPoint(offset).
+        Recorded as node extras `sekaiCharacterHair: {head, offset}` (offset in glTF axes)."""
+        nodes = self.glb.gltf["nodes"]
+        for obj in self.env.objects:
+            if obj.type.name != "MonoBehaviour" or self.bundle_of(obj) != self.face:
+                continue
+            try:
+                tt = obj.read_typetree()
+            except Exception:  # noqa: BLE001 - scripts without a type tree
+                continue
+            if "offset" not in tt or "headTransform" not in tt:
+                continue
+            head = self.node_of.get(self._tkey(obj.assets_file, tt["headTransform"]))
+            go = obj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
+            tr = next(c["component"] for c in go["m_Component"]
+                      if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
+            host = self.node_of.get((obj.assets_file.name, tr["m_PathID"]))
+            if head is None or host is None:
+                continue
+            o = tt["offset"]
+            nodes[host].setdefault("extras", {})["sekaiCharacterHair"] = {
+                "head": nodes[head]["name"], "offset": [-o["x"], o["y"], o["z"]]}
+
     def run(self) -> None:
         body_root = self.prefab_root(self.body, "body")
         face_root = self.prefab_root(self.face, "face")
@@ -205,6 +230,7 @@ class PjskModelExporter(CostumeExporter):
             self.add_renderer(r)
         if body_skins is not None:
             self.rebind_head_meshes(body_skins, offset)
+        self.character_hair()
 
 
 def export_one(bundles: Path, body: str, face: str, model_id: str, character: dict | None, out_dir: Path) -> None:

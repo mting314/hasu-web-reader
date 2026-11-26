@@ -130,6 +130,9 @@ export const toonGlobals: Record<string, THREE.IUniform> = {
   unity_WorldTransformParams: { value: new THREE.Vector4(0, 0, 0, 1) },
 };
 
+/** The story light's rotation as Unity Euler degrees (last setToonLighting), for PJSK's face shadow. */
+export const toonLightEulerUnity = new THREE.Vector3();
+
 /** Unity world-space vector -> the reader's world (z flipped, like every story coordinate). */
 export function unityWorldToThree(v: [number, number, number]): THREE.Vector3 {
   return new THREE.Vector3(v[0], v[1], -v[2]);
@@ -146,6 +149,7 @@ export function setToonLighting(opts: {
   color: [number, number, number];
   ambientSH: [number, number, number];
 }) {
+  toonLightEulerUnity.set(...opts.lightEulerUnity);
   const [x, y, z] = opts.lightEulerUnity.map(THREE.MathUtils.degToRad);
   // Unity applies Euler angles Z, then X, then Y
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, "YXZ"));

@@ -2,7 +2,13 @@ import * as THREE from "three";
 import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { createPjskFace } from "./pjskFace";
-import { preparePjskShaders, setPjskShaderTime, type PjskShaderState } from "./pjskMaterial";
+import {
+  newPjskShaderState,
+  preparePjskShaders,
+  setPjskShaderTime,
+  updatePjskShaderState,
+  type PjskShaderState,
+} from "./pjskMaterial";
 import { createPjskRetarget } from "./pjskRetarget";
 
 /**
@@ -49,7 +55,7 @@ export async function attachCastSwap(opts: {
   // Materials are shared by every clone of the model, so their per-model state (_FaceFront) is too.
   const scene = gltf.scene as THREE.Object3D & { userData: { pjskShaders?: Promise<void>; pjskState?: PjskShaderState } };
   if (!scene.userData.pjskShaders) {
-    const shaderState: PjskShaderState = { faceFront: new THREE.Vector3(0, 0, 1) };
+    const shaderState = newPjskShaderState();
     scene.userData.pjskState = shaderState;
     scene.userData.pjskShaders = preparePjskShaders(
       scene,
@@ -69,15 +75,13 @@ export async function attachCastSwap(opts: {
   if (retarget.missing.length) console.info(`[castSwap] ${opts.entry.id}: unmapped bones`, retarget.missing);
   const face = createPjskFace(opts.source, model);
   const nativeTop = restTop(model);
-  // _FaceFront: the model's forward (+Z at rest) carried by the head bone
-  const head = model.getObjectByName("Head");
-  const headForward = new THREE.Vector3(0, 0, 1);
-  if (head) {
-    model.updateMatrixWorld(true);
-    const headRest = head.getWorldQuaternion(new THREE.Quaternion());
-    headForward.applyQuaternion(headRest.invert());
-  }
-  const headQ = new THREE.Quaternion();
+  // CharacterModel.headTransform, and SekaiCharacterHair's offset (export_pjsk_model.py extras)
+  const head = model.getObjectByName("Head") ?? null;
+  let hairOffset: THREE.Vector3 | null = null;
+  model.traverse((n) => {
+    const h = n.userData.sekaiCharacterHair as { offset: [number, number, number] } | undefined;
+    if (h && !hairOffset) hairOffset = new THREE.Vector3(...h.offset);
+  });
 
   // The Hasu scene can be shared by two overlapping syncs of the same character, so the hidden
   // meshes are recorded on the scene and only the latest swap may show them again.
@@ -109,10 +113,7 @@ export async function attachCastSwap(opts: {
     update() {
       retarget.update();
       face?.();
-      if (head) {
-        model.updateMatrixWorld(true);
-        shaderState.faceFront.copy(headForward).applyQuaternion(head.getWorldQuaternion(headQ)).normalize();
-      }
+      if (head) updatePjskShaderState(shaderState, head, hairOffset);
       setPjskShaderTime(performance.now() / 1000);
     },
     setHeightMode,

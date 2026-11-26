@@ -1,26 +1,15 @@
 import * as THREE from "three";
-import { STENCIL_FUNC, STENCIL_OP, toonGlobals } from "../gameToonMaterial";
-import {
-  EYE_FRAG,
-  EYE_UNIFORMS,
-  EYE_VERT,
-  HIGHLIGHT_FRAG,
-  HIGHLIGHT_UNIFORMS,
-  HIGHLIGHT_VERT,
-  TOON_FRAG,
-  TOON_UNIFORMS,
-  TOON_VERT,
-} from "../shaders/pjskToonGame";
+import { STENCIL_FUNC, STENCIL_OP, toonGlobals, toonLightEulerUnity } from "../gameToonMaterial";
+import * as P from "../shaders/pjskToonGame";
 
 /**
  * Cast swap: PJSK's own character shaders on the exported models. The programs are the game's
  * (scripts/pjsk_shader_to_glsl.py); this file feeds them each material's values from the GLB
- * (`material.extras.unity`) and the stage-wide `_Sekai*` globals.
+ * (`material.extras.unity`), the stage-wide `_Sekai*` globals, and the per-frame values the game's
+ * scripts compute on the CPU (updatePjskShaderState).
  *
- * Every Toon-v3 material uses the Base pass's _LAMBERT variant for now: the face's _UseFaceSDF and
- * the hair's _HAIR_SHADOW variants read `_HeadDotDirectionalLightValues`, which the game computes
- * on the CPU in code not traced yet. The outline isn't drawn (the game draws it from extra render
- * targets in a later pass, also not traced).
+ * Not drawn yet: the outline (the game draws it from extra render targets in a later pass) and the
+ * Eyelash pass.
  */
 
 interface Program {
@@ -28,11 +17,27 @@ interface Program {
   frag: string;
   uniforms: Record<string, [string, number | null]>;
 }
-const PROGRAMS: Record<string, Program> = {
-  "Sekai/Live/Character/Toon-v3": { vert: TOON_VERT, frag: TOON_FRAG, uniforms: TOON_UNIFORMS },
-  "Sekai/Live/Character/Eye-Base": { vert: EYE_VERT, frag: EYE_FRAG, uniforms: EYE_UNIFORMS },
-  "Sekai/Live/Character/Eye-Highlight": { vert: HIGHLIGHT_VERT, frag: HIGHLIGHT_FRAG, uniforms: HIGHLIGHT_UNIFORMS },
-};
+const program = (vert: string, frag: string, uniforms: Program["uniforms"]): Program => ({ vert, frag, uniforms });
+const TOON = program(P.TOON_VERT, P.TOON_FRAG, P.TOON_UNIFORMS);
+const FACE = program(P.FACE_VERT, P.FACE_FRAG, P.FACE_UNIFORMS);
+const HAIR = program(P.HAIR_VERT, P.HAIR_FRAG, P.HAIR_UNIFORMS);
+const EYE = program(P.EYE_VERT, P.EYE_FRAG, P.EYE_UNIFORMS);
+const HIGHLIGHT = program(P.HIGHLIGHT_VERT, P.HIGHLIGHT_FRAG, P.HIGHLIGHT_UNIFORMS);
+
+/** The converted variant for a material's shader and keywords (null: not converted). */
+function programFor(unity: UnityMaterial): Program | null {
+  const kw = new Set(unity.keywords);
+  switch (unity.shader) {
+    case "Sekai/Live/Character/Toon-v3":
+      return kw.has("_UseFaceSDF") ? FACE : kw.has("_HAIR_SHADOW") ? HAIR : TOON;
+    case "Sekai/Live/Character/Eye-Base":
+      return EYE;
+    case "Sekai/Live/Character/Eye-Highlight":
+      return HIGHLIGHT;
+    default:
+      return null;
+  }
+}
 
 const CHARACTER_SLOTS = 12; // the _SekaiCharacter*Array globals, indexed by the material's _CharacterId
 const fill = <T>(make: () => T) => Array.from({ length: CHARACTER_SLOTS }, make);
@@ -83,6 +88,7 @@ interface UnityTexture {
 }
 interface UnityMaterial {
   shader: string;
+  keywords: string[];
   renderQueue: number;
   floats: Record<string, number>;
   colors: Record<string, [number, number, number, number]>;
@@ -107,9 +113,61 @@ function defaultTexture(slot: string) {
   return t;
 }
 
-/** Per model: its face direction (`_FaceFront`, for the eyelash fade), updated each frame. */
+/** Per model, the values the game's scripts set on its materials every frame (updatePjskShaderState). */
 export interface PjskShaderState {
   faceFront: THREE.Vector3;
+  headDot: THREE.Vector4;
+  headPosition: THREE.Vector3;
+}
+
+export const newPjskShaderState = (): PjskShaderState => ({
+  faceFront: new THREE.Vector3(0, 0, 1),
+  headDot: new THREE.Vector4(0, 1, 0, 0),
+  headPosition: new THREE.Vector3(),
+});
+
+const EPSILON = 1e-5; // Vector2.normalized: shorter vectors normalize to zero
+const Y180 = new THREE.Quaternion(0, 1, 0, 0);
+const _q = new THREE.Quaternion();
+const _v = new THREE.Vector3();
+const _euler = new THREE.Euler();
+
+function flatDir(v: THREE.Vector3, sign: number): [number, number] {
+  const len = Math.hypot(v.x, v.z);
+  return len > EPSILON ? [(sign * v.x) / len, (sign * v.z) / len] : [0, 0];
+}
+/** Unity's Quaternion.eulerAngles.y (Z, X, Y order, made positive) of a node's world rotation. */
+function unityEulerY(node: THREE.Object3D): number {
+  node.getWorldQuaternion(_q);
+  // The reader's world is Unity's with z flipped, and glTF nodes are x-mirrored from Unity's, so
+  // Unity's rotation is S_z · R · S_x = (S_z R S_z) · Ry(180°).
+  _q.set(-_q.x, -_q.y, _q.z, _q.w).multiply(Y180);
+  _euler.setFromQuaternion(_q, "YXZ");
+  return (THREE.MathUtils.radToDeg(_euler.y) + 360) % 360;
+}
+
+/**
+ * The per-frame material values of the game's character scripts (JP client RVAs):
+ * - `CharacterModel.UpdateEyelashData` (0x525A790): `_FaceFront = headTransform.forward`.
+ * - `CharacterModel.SetupFaceShadowAction` (0x5257460, run every Update through characterAction):
+ *   `_HeadDotDirectionalLightValues = (x, y, 0, 0)` with
+ *   x = dot(normalize(−head.up.xz), normalize(light.forward.xz)) and
+ *   y = 1 − | |light.eulerAngles.y − head.eulerAngles.y| − 180 | / 180.
+ *   (It also sets `_RangeLimit` / `_FACE_SHADOW_RANGE_LIMIT` from the stage's
+ *   SekaiCharacterDirectionalLight; story mode has none, so the limiter stays off.)
+ * - `SekaiCharacterHair.OnUpdate` (0xA81CD18): `_HeadPosition = headTransform.TransformPoint(offset)`.
+ * Directions are taken in the reader's world; the dot products don't change under its z flip.
+ */
+export function updatePjskShaderState(state: PjskShaderState, head: THREE.Object3D, hairOffset: THREE.Vector3 | null) {
+  head.updateWorldMatrix(true, false);
+  head.getWorldDirection(state.faceFront);
+  const up = _v.set(0, 1, 0).transformDirection(head.matrixWorld);
+  const [hx, hz] = flatDir(up, -1);
+  const toLight = toonGlobals._MainLightPosition.value as THREE.Vector4;
+  const [lx, lz] = flatDir(_v.set(-toLight.x, -toLight.y, -toLight.z), 1);
+  const lightY = ((toonLightEulerUnity.y % 360) + 360) % 360;
+  state.headDot.set(hx * lx + hz * lz, 1 - Math.abs(Math.abs(lightY - unityEulerY(head)) - 180) / 180, 0, 0);
+  if (hairOffset) state.headPosition.copy(hairOffset).applyMatrix4(head.matrixWorld);
 }
 
 async function createMaterial(
@@ -137,6 +195,10 @@ async function createMaterial(
       uniforms[name] = { value: new THREE.Vector4(...(t?.scale ?? [1, 1]), ...(t?.offset ?? [0, 0])) };
     } else if (name === "_FaceFront") {
       uniforms[name] = { value: state.faceFront };
+    } else if (name === "_HeadDotDirectionalLightValues") {
+      uniforms[name] = { value: state.headDot };
+    } else if (name === "_HeadPosition") {
+      uniforms[name] = { value: state.headPosition };
     } else if (name === "_ProjectionParams") {
       uniforms[name] = { value: new THREE.Vector4(1, 0.1, 100, 0.01) };
     } else if (type.startsWith("vec")) {
@@ -174,10 +236,7 @@ async function createMaterial(
 
 const _proj = new THREE.Vector4();
 
-/**
- * Replace a PJSK model's materials with the game's shaders. Returns false (leaving the model
- * alone) when a material isn't one of the converted shaders.
- */
+/** Replace a PJSK model's materials with the game's shaders (others are left as they are). */
 export async function preparePjskShaders(
   scene: THREE.Object3D,
   loadTexture: (index: number) => Promise<THREE.Texture>,
@@ -191,7 +250,7 @@ export async function preparePjskShaders(
     meshes.map(async (mesh) => {
       mesh.frustumCulled = false;
       const unity = (mesh.material as THREE.Material).userData?.unity as UnityMaterial | undefined;
-      const program = unity && PROGRAMS[unity.shader];
+      const program = unity && programFor(unity);
       if (!unity || !program) return;
       mesh.material = await createMaterial(unity, program, mesh.geometry, loadTexture, state);
       mesh.renderOrder = unity.renderQueue >= 0 ? unity.renderQueue : 2000;
