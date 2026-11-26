@@ -588,13 +588,14 @@ export class AudioMixer {
     }
   }
 
-  /** Make the playing ambience beds match a line's snapshot (seek / new line). */
-  public syncAmbience(beds: AmbienceBed[], fadeSec = 0.35) {
+  /** Make the playing ambience beds match a line's snapshot (seek / new line), except `skipIds`. */
+  public syncAmbience(beds: AmbienceBed[], fadeSec = 0.35, skipIds?: Set<string>) {
     const wanted = new Map(beds.map((b) => [b.id, b]));
     for (const id of Array.from(this.ambience.keys())) {
-      if (!wanted.has(id)) this.stopAmbience(id, fadeSec);
+      if (!wanted.has(id) && !skipIds?.has(id)) this.stopAmbience(id, fadeSec);
     }
     for (const bed of beds) {
+      if (skipIds?.has(bed.id)) continue;
       const existing = this.ambience.get(bed.id);
       if (!existing) {
         this.startAmbience(bed, fadeSec);

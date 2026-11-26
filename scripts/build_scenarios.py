@@ -410,6 +410,18 @@ def compile_script(
             return f"characters.{ev['character']}.position"
         return None
 
+    def is_timed(ev: dict[str, Any]) -> bool:
+        return anim_field_of(ev) is not None and float(ev.get("duration") or 0) > 0
+
+    def fields_set_by(ev: dict[str, Any]) -> list[str]:
+        """Animatable fields an instant command sets outright."""
+        if ev["type"] == "bg_show":
+            return ["background.position"]
+        if ev["type"] == "char_spawn":
+            return [f"characters.{ev['character']}.position"]
+        field = anim_field_of(ev)
+        return [field] if field else []
+
     def set_field(s: dict[str, Any], field: str, value: Any) -> None:
         *path, leaf = field.split(".")
         node = s
@@ -419,50 +431,75 @@ def compile_script(
                 return
         node[leaf] = copy.deepcopy(value)
 
-    # Values before each command (for timed commands, where their animation starts); timed
-    # commands of the current line's opening, by field: the value the animation starts from.
+    # The animatable values before the command being attached: where a timed command's
+    # animation starts (kept on the event as `_animFrom`, stripped before output).
     prev_anim = anim_fields(state)
-    anim_start: dict[int, Any] = {}
+    # The current line's opening: per field, the value its first timed command starts from,
+    # and the timed commands scheduled on it.
     line_start_overrides: dict[str, Any] = {}
+    opening_timed: dict[str, list[dict[str, Any]]] = {}
 
     def add_line_start_event(turn: dict[str, Any], ev: dict[str, Any]) -> None:
         """A command of the line's opening moment (with its message, before its first wait).
 
         Instant changes fold into the line's starting snapshot. One-shot sounds and mouth flaps
-        carry no state, so they're scheduled at offset 0 or they would never play. Timed
-        changes (pans, moves, fades) are scheduled at offset 0 too, and the snapshot keeps the
-        value they start from, so they play out instead of cutting to their end.
+        carry no state, so they're scheduled at offset 0 or they would never play; ambience
+        starts/stops are too, for their fade times (the snapshot only lists the beds). Timed
+        changes (pans, moves, fades) are scheduled at offset 0, and the snapshot keeps the
+        value the first one starts from, so they play out instead of cutting to their end. An
+        instant change to the same field afterwards supersedes them.
         """
         ev["turnOffsetSec"] = 0.0
-        field = anim_field_of(ev)
-        if field and float(ev.get("duration") or 0) > 0:
-            line_start_overrides[field] = anim_start.get(id(ev))
+        if is_timed(ev):
+            field = anim_field_of(ev)
+            line_start_overrides.setdefault(field, ev.get("_animFrom"))
+            opening_timed.setdefault(field, []).append(ev)
             turn["intraEvents"].append(ev)
-        else:
-            if field:
-                line_start_overrides.pop(field, None)
-            if (ev["type"] == "se_play" and not ev.get("loop")) or ev["type"] == "char_lip":
-                turn["intraEvents"].append(ev)
+            return
+        for field in fields_set_by(ev):
+            line_start_overrides.pop(field, None)
+            for timed in opening_timed.pop(field, []):
+                turn["intraEvents"].remove(timed)
+        if ev["type"] in ("se_play", "se_stop", "char_lip"):
+            turn["intraEvents"].append(ev)
+
+    def refresh_opening(turn: dict[str, Any]) -> None:
+        """Snapshot the line's opening state, with timed fields at their start values. The
+        timed events carry their section of the stage as it ends up, apart from the value
+        they animate, so they don't undo later instant changes to the rest of it."""
         snap = copy.deepcopy(state)
-        for f, value in line_start_overrides.items():
+        for field, value in line_start_overrides.items():
             if value is not None:
-                set_field(snap, f, value)
+                set_field(snap, field, value)
         turn["stateBefore"] = snap
         turn["stateAfter"] = copy.deepcopy(state)
+        for events in opening_timed.values():
+            for ev in events:
+                t = ev["type"]
+                if t in ("camera_move", "camera_rotate"):
+                    ev["camera"] = copy.deepcopy(state["camera"])
+                    key = "position" if t == "camera_move" else "rotation"
+                    ev["camera"][key] = copy.deepcopy(ev[key])
+                elif t == "bg_move":
+                    ev["background"] = copy.deepcopy(state["background"])
+                    ev["background"]["position"] = copy.deepcopy(ev["position"])
+                elif t == "char_move" and ev["character"] in state["characters"]:
+                    ev["characterState"] = copy.deepcopy(state["characters"][ev["character"]])
+                    ev["characterState"]["position"] = copy.deepcopy(ev["position"])
 
     def attach_event(ev: dict[str, Any]) -> None:
         nonlocal prev_anim
         ev["timestampSec"] = round(clock_sec, 3)
         ev["turnOffsetSec"] = round(turn_elapsed_sec, 3)
         ev.update(event_state(ev))
-        field = anim_field_of(ev)
-        if field:
-            anim_start[id(ev)] = prev_anim.get(field)
+        if is_timed(ev):
+            ev["_animFrom"] = prev_anim.get(anim_field_of(ev))
         prev_anim = anim_fields(state)
         if not turns:
             pending_events.append(ev)
         elif turn_elapsed_sec == 0.0:
             add_line_start_event(turns[-1], ev)
+            refresh_opening(turns[-1])
         else:
             tail.append(ev)
 
@@ -987,17 +1024,22 @@ def compile_script(
             # The commands since the previous line's last wait run as this message appears: they
             # open this line (a motion among them starts on this line, not the one before).
             line_start_overrides.clear()
+            opening_timed.clear()
             opening = list(tail)
             tail.clear()
-            for ev in opening:
-                c = state["characters"].get(ev.get("character") or "")
-                if ev.get("motionCmd") and c and c.get("motionCmd") == ev["motionCmd"]:
+            moved_cmds = {ev["motionCmd"] for ev in opening if ev.get("motionCmd")}
+            for c in [*state["characters"].values(), *(ev["characterState"] for ev in opening if "characterState" in ev)]:
+                if c.get("motionCmd") in moved_cmds:
                     c["motionStartTurn"] = idx
             for ev in opening:
                 add_line_start_event(turn_obj, ev)
+            refresh_opening(turn_obj)
             continue
 
     flush_tail()  # commands after the last line's final wait
+    for t in turns:
+        for ev in t["preEvents"] + t["intraEvents"]:
+            ev.pop("_animFrom", None)
 
     # Compute sub-clip start/end offsets for consecutive turns sharing the same voiceId
     i = 0
