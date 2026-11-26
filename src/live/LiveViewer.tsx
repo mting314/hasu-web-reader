@@ -6,6 +6,7 @@ import {
 import { ChunkStore, type LiveIndex } from "./motion";
 import { LiveStage, MEMBER_COLORS, type CameraPreset } from "./LiveStage";
 import { PlaybackClock } from "./clock";
+import Minimap from "./Minimap";
 
 /**
  * Fes×LIVE 3D choreo viewer: the decoded live motion of every member on a free-camera stage,
@@ -38,10 +39,12 @@ type Settings = {
   /** Seconds of pause before each loop repeat. */
   loopGap: number;
   segments: Segment[];
+  /** Formation minimap overlay. */
+  minimap: boolean;
 };
 const DEFAULTS: Settings = {
   rate: 1, mirror: false, offsetMs: 0, hidden: [], skeleton: false, volume: 1, muted: false,
-  othersOpacity: 1, plain: false, fanFacing: false, loopGap: 0, segments: [],
+  othersOpacity: 1, plain: false, fanFacing: false, loopGap: 0, segments: [], minimap: true,
 };
 
 function fmt(t: number | null): string {
@@ -83,7 +86,7 @@ export default function LiveViewer() {
       return DEFAULTS;
     }
   });
-  const { rate, mirror, offsetMs, hidden, skeleton, volume, muted, othersOpacity, plain, fanFacing, loopGap, segments } = settings;
+  const { rate, mirror, offsetMs, hidden, skeleton, volume, muted, othersOpacity, plain, fanFacing, loopGap, segments, minimap } = settings;
   /** Wall-clock time (performance.now) when a paused loop repeat resumes, during a loop gap. */
   const resumeAtRef = useRef<number | null>(null);
   const [gapLeft, setGapLeft] = useState<number | null>(null);
@@ -342,6 +345,7 @@ export default function LiveViewer() {
       else if (k === "p") update({ plain: !plain });
       else if (k === "m") update({ mirror: !mirror });
       else if (k === "k") update({ skeleton: !skeleton });
+      else if (k === "n") update({ minimap: !minimap });
       else if (/^[1-5]$/.test(k)) setCamera(CAMERAS[Number(k) - 1]);
       else if (k === "f") setFollowMember(null);
       else if (k === "v" && follow !== null) startFanCam(fanCam ? null : follow);
@@ -415,6 +419,11 @@ export default function LiveViewer() {
               </button>
             ))}
           </div>
+          {minimap && (
+            <div className="pointer-events-none absolute bottom-3 left-3">
+              <Minimap stageRef={stageRef} mirror={mirror} onPick={(cid) => setFollowMember(follow === cid ? null : cid)} />
+            </div>
+          )}
         </div>
 
         <aside className="flex w-72 flex-col overflow-y-auto border-l border-slate-800 text-sm">
@@ -480,6 +489,10 @@ export default function LiveViewer() {
               <input type="checkbox" checked={fanFacing} onChange={(e) => update({ fanFacing: e.target.checked })} className="accent-amber-500" />
               Fan cam stays in front of her
             </label>
+            <label className="flex items-center gap-2" title="Top-down stage map with each member's next 2 s of movement; click a member to follow her (N)">
+              <input type="checkbox" checked={minimap} onChange={(e) => update({ minimap: e.target.checked })} className="accent-amber-500" />
+              Formation minimap
+            </label>
           </section>
           <section className="border-b border-slate-800 px-3 py-2">
             <div className="mb-1 font-medium text-slate-300">Setlist</div>
@@ -535,7 +548,7 @@ export default function LiveViewer() {
           <section className="px-3 py-2 text-xs leading-5 text-slate-500">
             <div><kbd>Space</kbd> play · <kbd>,</kbd>/<kbd>.</kbd> frame · <kbd>←</kbd>/<kbd>→</kbd> ±1s</div>
             <div><kbd>[</kbd>/<kbd>]</kbd> speed · <kbd>A</kbd>/<kbd>B</kbd>/<kbd>L</kbd>/<kbd>C</kbd> loop · <kbd>S</kbd> save loop</div>
-            <div><kbd>M</kbd> mirror · <kbd>K</kbd> skeleton · <kbd>P</kbd> plain · <kbd>1</kbd>–<kbd>5</kbd> cameras · <kbd>F</kbd> unfollow · <kbd>V</kbd> fan cam</div>
+            <div><kbd>M</kbd> mirror · <kbd>K</kbd> skeleton · <kbd>P</kbd> plain · <kbd>N</kbd> minimap · <kbd>1</kbd>–<kbd>5</kbd> cameras · <kbd>F</kbd> unfollow · <kbd>V</kbd> fan cam</div>
             <div>Drag to orbit, right-drag to pan, wheel to zoom.</div>
             <label className="mt-2 flex items-center gap-2">
               Audio sync

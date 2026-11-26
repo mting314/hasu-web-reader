@@ -128,6 +128,8 @@ export class LiveStage {
   plain = false;
   /** Unit vector (three.js space) from the stage towards the audience: members face +z at MC lineups. */
   audience = new THREE.Vector3(0, 0, 1);
+  /** Time (s) of the last update. */
+  time = 0;
 
   private loader = new GLTFLoader();
   private lips: LipStore;
@@ -137,6 +139,9 @@ export class LiveStage {
   private expressions: Record<string, ExpressionTrack> = {};
   showFaces = true;
   private muscles = new Float32Array(MUSCLE_COUNT);
+  /** Scratch for positionAt, which only needs the root. */
+  private aheadMuscles = new Float32Array(MUSCLE_COUNT);
+  private aheadRoot: Vec3 = [0, 0, 0];
   private gradient: THREE.DataTexture;
   private centre: Vec3;
   private disposed = false;
@@ -278,6 +283,29 @@ export class LiveStage {
     let o: { dx: number; dz: number } | null = null;
     for (const e of m.offsets) if (t >= e.from - 0.5) o = e;
     return o ?? m.offsets[0] ?? null;
+  }
+
+  /** Root position (game space) on the stage: the sample's capture-space pos moved to her formation slot. */
+  private stageRoot(m: Member, t: number, pos: Vec3, out: Vec3): Vec3 {
+    const off = this.offsetAt(m, t);
+    out[0] = off ? pos[0] + off.dx : pos[0] - this.centre[0];
+    out[1] = pos[1];
+    out[2] = off ? pos[2] + off.dz : pos[2] - this.centre[2];
+    return out;
+  }
+
+  /**
+   * Where member cid's hips are at time t (three.js world space, same placement as update), for
+   * looking ahead of the playhead. False while she's off stage or that motion chunk isn't loaded.
+   */
+  positionAt(cid: number, t: number, out: THREE.Vector3): boolean {
+    const m = this.members.get(cid);
+    if (!m || !this.visibleAt(m, t)) return false;
+    const s = this.store.sample(cid, t, this.aheadMuscles);
+    if (!s) return false;
+    const r = this.stageRoot(m, t, s.pos, this.aheadRoot);
+    out.set(-r[0], r[1], r[2]); // toGltfT
+    return true;
   }
 
   private costumeAt(m: Member, t: number): string | null {
@@ -527,6 +555,7 @@ export class LiveStage {
   /** Pose everyone for time t and render. */
   update(t: number) {
     if (this.disposed) return;
+    this.time = t;
     this.store.prefetch(t);
     this.lips.prefetch(t);
     if (this.subBones) this.subs.prefetch(t);
@@ -544,10 +573,7 @@ export class LiveStage {
         m.skeleton.visible = false;
         continue;
       }
-      const off = this.offsetAt(m, t);
-      const rootT: Vec3 = off
-        ? [s.pos[0] + off.dx, s.pos[1], s.pos[2] + off.dz]
-        : [s.pos[0] - this.centre[0], s.pos[1], s.pos[2] - this.centre[2]];
+      const rootT = this.stageRoot(m, t, s.pos, [0, 0, 0]);
       const pose = rig.solver.solve(s.muscles, rootT, s.rot);
       const hipsWorld = toGltfT(rootT);
       m.hips.set(hipsWorld[0], hipsWorld[1], hipsWorld[2]);
