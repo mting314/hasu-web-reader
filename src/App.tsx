@@ -174,6 +174,13 @@ export default function App() {
   autoPlayRef.current = autoPlay;
   const autoJustEnabledRef = useRef(false);
   const pausedByHiddenTabRef = useRef(false);
+  // A line whose stage gate settled while the tab was hidden starts when the tab comes back.
+  const deferredLineStartRef = useRef<(() => void) | null>(null);
+  const runDeferredLineStart = () => {
+    const start = deferredLineStartRef.current;
+    deferredLineStartRef.current = null;
+    start?.();
+  };
   const hiddenPausedAtRef = useRef<number | null>(null);
   const readingTimerRef = useRef<{
     id: number | null;
@@ -202,7 +209,10 @@ export default function App() {
     setFirstTurnReady(false);
     setScenarioLoadingSlug(slug);
     fetch(`/data/scenarios/${slug}.json`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((raw: ScenarioData) => {
         if (cancelled) return;
         const data = rewriteAssetUrls(raw); // point /assets/* at GCS when configured
@@ -224,7 +234,10 @@ export default function App() {
         }
       })
       .catch((e) => {
-        if (!cancelled) setScenarioLoadingSlug(null);
+        if (cancelled) return;
+        // Lift the loading cover so the previous part stays readable.
+        setScenarioLoadingSlug(null);
+        setFirstTurnReady(true);
         console.error("Failed to load scenario:", e);
       });
     return () => {
@@ -277,6 +290,7 @@ export default function App() {
         lineStartRef.current += pausedMs;
       }
       setTabHiddenPaused(false);
+      runDeferredLineStart();
       return;
     }
     const onVisChange = () => {
@@ -298,6 +312,7 @@ export default function App() {
         }
         setTabHiddenPaused(false);
         AudioMixer.resumeFromHiddenTab();
+        runDeferredLineStart();
         if (pausedByHiddenTabRef.current) {
           pausedByHiddenTabRef.current = false;
           setAutoPlay(true);
@@ -487,20 +502,25 @@ export default function App() {
       }
     };
 
-    if (currentTurn.voiceUrl) {
-      AudioMixer.playVoice(currentTurn.voiceUrl, {
-        startSec: currentTurn.voiceStartSec || 0,
-        endSec: currentTurn.voiceEndSec ?? null,
-        autoContinue: autoPlayRef.current && sharesVoiceWithNext(currentTurn),
-        onEnded: finish,
-        onError: finishAfterReading,
-      });
-    } else {
-      AudioMixer.stopVoice();
-      finishAfterReading();
-    }
+    const startLine = () => {
+      if (currentTurn.voiceUrl) {
+        AudioMixer.playVoice(currentTurn.voiceUrl, {
+          startSec: currentTurn.voiceStartSec || 0,
+          endSec: currentTurn.voiceEndSec ?? null,
+          autoContinue: autoPlayRef.current && sharesVoiceWithNext(currentTurn),
+          onEnded: finish,
+          onError: finishAfterReading,
+        });
+      } else {
+        AudioMixer.stopVoice();
+        finishAfterReading();
+      }
+    };
+    if (document.hidden && settings.pauseWhenHidden) deferredLineStartRef.current = startLine;
+    else startLine();
 
     return () => {
+      deferredLineStartRef.current = null;
       if (readingTimerRef.current.id !== null) {
         window.clearTimeout(readingTimerRef.current.id);
         readingTimerRef.current.id = null;
@@ -1235,7 +1255,8 @@ export default function App() {
                 cameraMode={settings.cameraMode}
                 enable3D={settings.enable3DStage}
                 resolution={settings.stageResolution}
-                paused={tabHiddenPaused || sidebarOpen || creditsOpen}
+                paused={tabHiddenPaused}
+                obscured={sidebarOpen || creditsOpen}
                 audioMixer={AudioMixer}
                 onAdvance={handleStageOrKeyAdvance}
                 onStageReady={setStageReadyTurn}

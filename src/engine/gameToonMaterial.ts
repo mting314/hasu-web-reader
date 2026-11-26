@@ -7,6 +7,7 @@ import {
   OUTLINE_FRAG,
   OUTLINE_VERT,
   UBER_DEFAULTS,
+  EYE_DEFAULTS,
   UBER_UNIFORMS,
 } from "./shaders/uberToonGame";
 
@@ -179,7 +180,8 @@ function unityDefaultTexture(name: string): THREE.DataTexture {
 function uniformsFor(
   names: string[],
   unity: UnityMaterial,
-  textures: Map<string, THREE.Texture>
+  textures: Map<string, THREE.Texture>,
+  defaults: Record<string, number | number[] | string> = UBER_DEFAULTS
 ): Record<string, THREE.IUniform> {
   const out: Record<string, THREE.IUniform> = {
     uObjectToWorld: { value: new THREE.Matrix4() },
@@ -191,7 +193,7 @@ function uniformsFor(
       continue;
     }
     const [type] = UBER_UNIFORMS[name];
-    const fallback = UBER_DEFAULTS[name];
+    const fallback = defaults[name];
     if (type === "sampler2D") {
       out[name] = { value: textures.get(name) ?? unityDefaultTexture(typeof fallback === "string" ? fallback : "white") };
     } else if (name.endsWith("_ST")) {
@@ -229,8 +231,12 @@ const FORWARD_UNIFORMS = [...new Set([...namesOf(FORWARD_VERT), ...namesOf(FORWA
 const OUTLINE_UNIFORMS = [...new Set([...namesOf(OUTLINE_VERT), ...namesOf(OUTLINE_FRAG)])];
 const EYE_UNIFORMS = [...new Set([...namesOf(EYE_VERT), ...namesOf(EYE_FRAG)])];
 
-function applyStencil(m: THREE.Material, f: Record<string, number>) {
-  const v = (k: string, d: number) => f[k] ?? (UBER_DEFAULTS[k] as number | undefined) ?? d;
+function applyStencil(
+  m: THREE.Material,
+  f: Record<string, number>,
+  defaults: Record<string, number | number[] | string> = UBER_DEFAULTS
+) {
+  const v = (k: string, d: number) => f[k] ?? (defaults[k] as number | undefined) ?? d;
   m.stencilWrite = true; // three.js only enables the stencil test with this set
   m.stencilRef = v("_StencilReference", 255);
   m.stencilFuncMask = v("_StencilReadMask", 255);
@@ -331,7 +337,7 @@ export async function createGameEyeMaterial(
     })
   );
   const f = unity.floats;
-  const num = (k: string) => f[k] ?? (UBER_DEFAULTS[k] as number | undefined) ?? 0;
+  const num = (k: string) => f[k] ?? (EYE_DEFAULTS[k] as number | undefined) ?? 0;
   const src = BLEND_FACTOR[num("_BlendRGBSrc")] ?? THREE.OneFactor;
   const dst = (BLEND_FACTOR[num("_BlendRGBDst")] ?? THREE.ZeroFactor) as THREE.BlendingDstFactor;
   const srcA = BLEND_FACTOR[num("_BlendAlphaSrc")] ?? THREE.OneFactor;
@@ -342,7 +348,7 @@ export async function createGameEyeMaterial(
     name: `${name} (CharacterEye)`,
     vertexShader: EYE_VERT,
     fragmentShader: EYE_FRAG,
-    uniforms: uniformsFor(EYE_UNIFORMS, unity, textures),
+    uniforms: uniformsFor(EYE_UNIFORMS, unity, textures, EYE_DEFAULTS),
     side: CULL[num("_CullMode")] ?? THREE.FrontSide,
     depthWrite: num("_ZWriteMode") !== 0,
     depthFunc: DEPTH_FUNC[num("_ZTestMode")] ?? THREE.LessEqualDepth,
@@ -355,7 +361,7 @@ export async function createGameEyeMaterial(
     polygonOffsetFactor: num("_ZFactor"),
     polygonOffsetUnits: num("_ZUnits"),
   });
-  applyStencil(material, f);
+  applyStencil(material, f, EYE_DEFAULTS);
   material.userData.unity = unity;
   return { material, queue: unity.renderQueue >= 0 ? unity.renderQueue : SHADER_QUEUE };
 }

@@ -49,7 +49,10 @@ interface StageCanvasProps {
   cameraMode: "adv" | "orbit";
   enable3D: boolean;
   resolution?: StageResolution;
+  /** Freezes the stage timeline (clock, mid-line events, fades) along with the audio. */
   paused?: boolean;
+  /** An overlay covers the stage: keep the timeline running in step with the audio, skip drawing. */
+  obscured?: boolean;
   audioMixer: AudioMixer;
   onAdvance: () => void;
   /** Called with the turn once that line's stage assets (background, cast, their motions,
@@ -552,6 +555,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   enable3D,
   resolution = "auto",
   paused = false,
+  obscured = false,
   audioMixer,
   onAdvance,
   onStageReady,
@@ -565,12 +569,15 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [inView, setInView] = useState(true);
-  const stagePaused = Boolean(paused) || !inView;
+  const stagePaused = Boolean(paused);
   const stagePausedRef = useRef(stagePaused);
   stagePausedRef.current = stagePaused;
+  // Scrolled out of view or covered: nothing to draw, but the timeline keeps pace with the voice.
+  const skipRenderRef = useRef(false);
+  skipRenderRef.current = obscured || !inView;
   // Virtual stage clock (seconds): advances only while the stage is unpaused, so camera pans,
-  // character walks, blink/lip timers, and skeletal animations freeze cleanly when hidden or
-  // scrolled out of view and resume without a dt catch-up jump (matching Cleista's live2d.js & effect-clock.js).
+  // character walks, blink/lip timers, and skeletal animations freeze cleanly when the tab is
+  // hidden and resume without a dt catch-up jump (matching Cleista's live2d.js & effect-clock.js).
   const stageNowSecRef = useRef(0);
   const wakeLoopRef = useRef<(() => void) | null>(null);
   const renderOnceRef = useRef<(() => void) | null>(null);
@@ -743,7 +750,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         char.flush.update(dt);
       }
 
-      renderer.render(scene, camera);
+      if (!skipRenderRef.current) renderer.render(scene, camera);
     };
 
     const animate = () => {
@@ -807,7 +814,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   }, [audioMixer]);
 
   // Pause / resume virtual stage clock, active mid-line timers, and fade animations
-  // when the tab is hidden, an overlay covers the reader, or the stage is scrolled out of view.
+  // when the tab is hidden (the audio pauses with them).
   useEffect(() => {
     const now = performance.now();
     if (stagePaused) {
@@ -913,6 +920,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       }
       const clips = await clipsPromise;
       if (char.requestedMotion !== startKey) return; // a newer motion was requested meanwhile
+      // The bones still carry last frame's look-at; freeze the animated pose, not that.
+      char.lookAt.restore();
       playStoryMotion(char, clips, motionId, start);
       char.appliedMotion = startKey;
     } catch (e) {

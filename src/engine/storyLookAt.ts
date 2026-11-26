@@ -52,9 +52,11 @@ export const SIGHT_WEIGHT_SETTINGS = {
 
 export const LOOK_AT_MAX_ANGLE_DEG = 90.0;
 
-type LookTarget =
-  | { kind: "object"; object: THREE.Object3D }
-  | { kind: "point"; point: THREE.Vector3 };
+/** A character target is resolved by name every frame: it may load after the command runs, or be
+ * re-spawned with a new costume (a new eye bone). */
+type LookTarget = { kind: "char"; name: string } | { kind: "point"; point: THREE.Vector3 };
+
+export type ResolveCharEye = (charName: string) => THREE.Object3D | null;
 
 interface LookBone {
   bone: THREE.Object3D;
@@ -105,6 +107,7 @@ export class StoryLookAt {
   private lookAtRatioForTarget = 1;
   private lookAtTargetDuration = 0;
   private lastCmdKey: string | null = null;
+  private resolveCharEye: ResolveCharEye = () => null;
 
   constructor(rootGroup: THREE.Object3D, modelScene: THREE.Object3D) {
     this.rootGroup = rootGroup;
@@ -206,8 +209,11 @@ export class StoryLookAt {
     if (target.kind === "point") {
       return out.copy(target.point);
     }
-    target.object.updateWorldMatrix(true, false);
-    return target.object.getWorldPosition(out);
+    const eye = this.resolveCharEye(target.name);
+    // Until the target character has loaded, keep looking where we were.
+    if (!eye) return out.copy(this.lastLookAtPosition);
+    eye.updateWorldMatrix(true, false);
+    return eye.getWorldPosition(out);
   }
 
   /** `ModelHandler.SetLookAtTarget(Transform target, bool useTransition = true, float duration = 0)` (`0x497D5B0`). */
@@ -241,7 +247,11 @@ export class StoryLookAt {
     }
   }
 
-  /** `ModelHandler.SetLookAtAngle(float degree, bool useTransition = true)` (`0x497D780`). */
+  /**
+   * `ModelHandler.SetLookAtAngle(float degree, bool useTransition = true)` (`0x497D780`). The game
+   * never reads `useTransition` here, and `OnIKPass` aims straight at `LookAtPositionByAngle`, so an
+   * angle look-at changes in one frame in the game too.
+   */
   setLookAtAngle(degree: number, useTransition = true): void {
     this.setLookAtTarget(null, false, 0);
     this.angleDeg = degree;
@@ -260,9 +270,10 @@ export class StoryLookAt {
   applyCommand(
     lookAt: CharacterState["lookAt"] | undefined,
     useTransition: boolean,
-    resolveCharEye: (charName: string) => THREE.Object3D | null
+    resolveCharEye: ResolveCharEye
   ): void {
     if (!lookAt) return;
+    this.resolveCharEye = resolveCharEye;
     const mode = lookAt.mode || "angle";
     const val = lookAt.value;
     const dur = Number(lookAt.duration ?? 0);
@@ -281,12 +292,7 @@ export class StoryLookAt {
       const pt = new THREE.Vector3(Number(val[0]) || 0, Number(val[1]) || 0, -(Number(val[2]) || 0));
       this.setLookAtTarget({ kind: "point", point: pt }, useTransition, dur);
     } else if (mode === "キャラ指定" && typeof val === "string" && val) {
-      const targetEye = resolveCharEye(val);
-      if (targetEye) {
-        this.setLookAtTarget({ kind: "object", object: targetEye }, useTransition, dur);
-      } else {
-        this.setLookAtTarget(null, useTransition, dur);
-      }
+      this.setLookAtTarget({ kind: "char", name: val }, useTransition, dur);
     } else {
       this.setLookAtTarget(null, useTransition, dur);
     }

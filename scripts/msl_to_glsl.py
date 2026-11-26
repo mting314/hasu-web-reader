@@ -318,14 +318,12 @@ def main() -> None:
     types = {k: list(v) for k, v in sorted(all_uniforms.items())}
     lines.append(f"/** Every uniform the programs read: name -> [GLSL type, array length or null]. */")
     lines.append(f"export const UBER_UNIFORMS = {json.dumps(types)} as Record<string, [string, number | null]>;")
-    merged_props = {}
-    if eye_shader_text:
-        merged_props.update(property_defaults(eye_shader_text))
-    merged_props.update(property_defaults(shader_text))
-    defaults = {k: v for k, v in merged_props.items() if k in all_uniforms}
-    lines.append("")
-    lines.append("/** The shader's property defaults (numbers, [r, g, b, a], or Unity's default texture name). */")
-    lines.append(f"export const UBER_DEFAULTS = {json.dumps(defaults)} as Record<string, number | number[] | string>;")
+    # Each shader keeps its own defaults: the two define some of the same properties differently.
+    for name, text in (("UBER_DEFAULTS", shader_text), ("EYE_DEFAULTS", eye_shader_text)):
+        defaults = {k: v for k, v in property_defaults(text).items() if k in all_uniforms} if text else {}
+        lines.append("")
+        lines.append("/** The shader's property defaults (numbers, [r, g, b, a], or Unity's default texture name). */")
+        lines.append(f"export const {name} = {json.dumps(defaults)} as Record<string, number | number[] | string>;")
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")

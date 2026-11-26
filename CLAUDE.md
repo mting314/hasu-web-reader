@@ -55,7 +55,7 @@ setup). This file records what we've learned about how the game's assets work.
 | Bundle index (`.inspect-tmp/ios_index.jsonl`) | One JSON line per bundle: `file`, `cabs`, `deps`, `containers` (asset ids such as `mot_00_01060`), `types` (Unity object counts). Grep it to find which bundle holds an asset. |
 | Model exports (`data-inspect/model-export/`) | UnityPy exports of costume/face models (`report.json` per model), produced by the scripts in `.inspect-tmp/scripts/`. |
 | hamproductions' explorer data | Where the current GLB/audio files originally came from. We only keep their asset **index**, `data_cache/model_viewer_context.json` (asset id → `glbPath`, `textureDir`, `textures`, `textureMap`, `extraGlbs`, `metadata.characterName`), which the build and cache scripts use to map ids to files. |
-| Our store | `public/assets/` ⇄ `gs://hasu-web-reader-assets` (same layout). `npm run cache-assets -- <scriptId>` downloads from the bucket; `scripts/upload_assets_gcs.sh <dir>` uploads. |
+| Our store | `public/assets/` ⇄ `gs://hasu-web-reader-assets` (same layout). `npm run cache-assets -- <scriptId>` downloads from the bucket; `scripts/upload_assets_gcs.sh <dir>` uploads. `scripts/update_store_manifest.sh` lists the bucket's voice clips, icons, motions and props into `data_cache/asset_store_manifest.txt` (committed), which the build checks instead of the local cache; re-run it after uploading. |
 
 ### Bucket
 

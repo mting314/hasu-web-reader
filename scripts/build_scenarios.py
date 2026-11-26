@@ -261,17 +261,13 @@ def slug_for_script_id(script_id: str) -> str:
 # Asset paths referenced by the script but absent from public/assets (reported after the build).
 MISSING_ASSETS: dict[str, str] = {}
 
-# Assets referenced in scripts that were never exported into our asset store (kept as a fixed set
-# so build_scenarios.py produces identical JSON whether or not public/assets/ is populated locally).
-UNPUBLISHED_STORE_ASSETS: set[str] = {
-    "3d/ppadv/ppadv006_pamphlet/ppadv006_pamphlet.glb",
-    "assets/charaicon/charamini_icon_face_sd_1011_01.webp",
-    "story/voice/vo_adv_10300101_0046_m9009_01.webm",
-    "story/voice/vo_adv_10300101_0047_m9009_01.webm",
-    "story/voice/vo_adv_10300101_0048_m9009_01.webm",
-    "story/voice/vo_adv_10300101_0049_m9009_01.webm",
-    "story/voice/vo_adv_10300101_0050_m9009_01.webm",
-}
+# What's in our asset store (bucket), from scripts/update_store_manifest.sh, so the compiled JSON
+# is the same whether or not public/assets/ is populated locally. Without the manifest, fall back
+# to the local cache.
+STORE_MANIFEST_PATH = DATA_CACHE_DIR / "asset_store_manifest.txt"
+STORE_MANIFEST: set[str] | None = (
+    set(STORE_MANIFEST_PATH.read_text(encoding="utf-8").split()) if STORE_MANIFEST_PATH.exists() else None
+)
 
 
 def asset_available(rel_path: str) -> bool:
@@ -280,8 +276,10 @@ def asset_available(rel_path: str) -> bool:
 
 
 def asset_in_store(rel_path: str) -> bool:
-    """Deterministic check of whether an asset exists in our asset store (independent of local cache)."""
-    return rel_path not in UNPUBLISHED_STORE_ASSETS
+    """Whether our asset store has the file (the bucket manifest, else the local cache)."""
+    if STORE_MANIFEST is not None:
+        return rel_path in STORE_MANIFEST
+    return asset_available(rel_path)
 
 
 def asset_url(rel_path: str, script_id: str = "") -> str:
@@ -564,7 +562,10 @@ def compile_script(
         if cmd in ("キャラモーション再生", "キャラモーション即時再生") and len(args) >= 2:
             char_name, mot_id = args[0], args[1]
             mot_rel = f"3d/motions/{mot_id}.glb"
-            mot_url = asset_url(mot_rel, script_id)
+            # A motion missing from the store leaves the character on its previous valid motion.
+            mot_url = asset_url(mot_rel, script_id) if asset_in_store(mot_rel) else None
+            if mot_url is None:
+                MISSING_ASSETS.setdefault(mot_rel, script_id)
             mot_desc = comment or (motions_meta_by_id.get(mot_id) or {}).get("description") or mot_id
             immediate = cmd == "キャラモーション即時再生"
             play_type = int(args[2]) if len(args) >= 3 and re.fullmatch(r"[0-2]", args[2]) else 2
@@ -577,7 +578,8 @@ def compile_script(
                 state["characters"][char_name]["motionId"] = mot_id
                 state["characters"][char_name]["motionDescription"] = mot_desc
                 state["characters"][char_name].update(start)
-                state["characters"][char_name]["motionUrl"] = mot_url
+                if mot_url:
+                    state["characters"][char_name]["motionUrl"] = mot_url
             attach_event({
                 "type": "char_motion",
                 "character": char_name,
@@ -612,8 +614,8 @@ def compile_script(
             rot = parse_vec(args[4], [0.0, 0.0, 0.0]) if len(args) >= 5 else [0.0, 0.0, 0.0]
             pinfo = assets_by_id.get(prop_id)
             glb_rel = f"3d/{(pinfo or {}).get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
-            if not pinfo:
-                # No model for this prop in the game's 3D asset catalog (e.g. ppadv006_pamphlet):
+            if not pinfo or not asset_in_store(glb_rel):
+                # No model for this prop in our store (e.g. ppadv006_pamphlet isn't in the catalog):
                 # leave it off the stage rather than shipping a reference that can only 404.
                 MISSING_ASSETS.setdefault(glb_rel, script_id)
                 state["props"].pop(alias, None)  # the slot is emptied, not left with an older prop

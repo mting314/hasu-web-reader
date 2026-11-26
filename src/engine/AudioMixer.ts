@@ -522,9 +522,12 @@ export class AudioMixer {
       onDone?.();
       return;
     }
-    t.fade = { from: t.gain, to, start: performance.now(), dur: durSec * 1000, onDone };
+    const start = this.hiddenPausedState?.pausedAt ?? performance.now();
+    t.fade = { from: t.gain, to, start, dur: durSec * 1000, onDone };
     if (this.fadeTimer !== null) return;
     this.fadeTimer = window.setInterval(() => {
+      // Fades hold while the tab-hidden pause is on; resumeFromHiddenTab shifts their start.
+      if (this.hiddenPausedState) return;
       const now = performance.now();
       let active = 0;
       for (const track of Array.from(this.tracks)) {
