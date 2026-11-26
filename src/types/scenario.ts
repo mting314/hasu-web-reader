@@ -204,6 +204,8 @@ export interface AudioState {
   bgmUrl: string | null;
   bgmTitle: string | null;
   bgmVolume: number;
+  /** The track's loop region [start, end] in seconds, from the game's wave (absent: whole file) */
+  bgmLoop?: [number, number] | null;
   /** Looping ambience beds active at this point of the script */
   ambience: AmbienceBed[];
 }

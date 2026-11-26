@@ -1,0 +1,44 @@
+{
+  "bgm_adv_afternoon_0001": {
+    "sampleRate": 48000,
+    "samples": 4377984,
+    "loopStart": 0,
+    "loopEnd": 4377633
+  },
+  "bgm_adv_comical_0001": {
+    "sampleRate": 48000,
+    "samples": 3216384,
+    "loopStart": 0,
+    "loopEnd": 3216013
+  },
+  "bgm_adv_evening_0001": {
+    "sampleRate": 48000,
+    "samples": 4483328,
+    "loopStart": 21062,
+    "loopEnd": 4483037
+  },
+  "bgm_adv_funny_0001": {
+    "sampleRate": 48000,
+    "samples": 3331456,
+    "loopStart": 136143,
+    "loopEnd": 3331190
+  },
+  "bgm_adv_morning_0001": {
+    "sampleRate": 48000,
+    "samples": 4037504,
+    "loopStart": 323105,
+    "loopEnd": 4037233
+  },
+  "bgm_adv_sentimental_0001": {
+    "sampleRate": 48000,
+    "samples": 4362496,
+    "loopStart": 42236,
+    "loopEnd": 4362173
+  },
+  "bgm_fes_interlude_0002": {
+    "sampleRate": 48000,
+    "samples": 3332480,
+    "loopStart": 246387,
+    "loopEnd": 3332102
+  }
+}

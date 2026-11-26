@@ -271,6 +271,27 @@ STORE_MANIFEST: set[str] | None = (
 )
 
 
+# Loop regions of the BGM re-exported from the game's CRI banks (scripts/export_bgm.py), in samples.
+BGM_LOOPS_PATH = DATA_CACHE_DIR / "bgm_loops.json"
+BGM_LOOPS: dict[str, dict[str, Any]] = (
+    json.loads(BGM_LOOPS_PATH.read_text(encoding="utf-8")) if BGM_LOOPS_PATH.exists() else {}
+)
+
+
+def bgm_source(bgm_id: str, script_id: str) -> tuple[str, list[float] | None]:
+    """URL and loop region [start, end] (seconds) for a BGM: the CRI re-export with the game's loop
+    points when it's in the store, else the old MP3 (looped whole by the player)."""
+    info = BGM_LOOPS.get(bgm_id)
+    webm_rel = f"bgm/{bgm_id}.webm"
+    if info and asset_in_store(webm_rel):
+        loop = None
+        if info.get("loopStart") is not None and info.get("loopEnd"):
+            rate = info["sampleRate"]
+            loop = [round(info["loopStart"] / rate, 6), round(info["loopEnd"] / rate, 6)]
+        return asset_url(webm_rel, script_id), loop
+    return asset_url(f"bgm/{bgm_id}.mp3", script_id), None
+
+
 def asset_available(rel_path: str) -> bool:
     local_file = PUBLIC_ASSETS_DIR / rel_path
     return local_file.exists() and local_file.stat().st_size > 0
@@ -342,6 +363,7 @@ def compile_script(
         "audio": {
             "bgmId": None,
             "bgmUrl": None,
+            "bgmLoop": None,
             "bgmTitle": None,
             "bgmVolume": 1.0,
             # Looping ambience beds active at this point: [{id, url, volume}]
@@ -891,9 +913,10 @@ def compile_script(
             vol = float(args[2]) if len(args) > 2 and re.match(r"^[\d.]+$", args[2]) else 1.0
             fade_sec = float(args[3]) if len(args) > 3 and re.match(r"^[\d.]+$", args[3]) else 0.0
             bgm_info = bgm_map.get(bgm_id) or {}
-            bgm_url = asset_url(f"bgm/{bgm_id}.mp3", script_id)
+            bgm_url, bgm_loop = bgm_source(bgm_id, script_id)
             state["audio"]["bgmId"] = bgm_id
             state["audio"]["bgmUrl"] = bgm_url
+            state["audio"]["bgmLoop"] = bgm_loop
             state["audio"]["bgmTitle"] = bgm_info.get("official_title") or bgm_id
             state["audio"]["bgmVolume"] = vol
             attach_event({"type": "bgm_play", "bgmId": bgm_id, "bgmUrl": bgm_url, "volume": vol, "fadeSec": fade_sec})
@@ -903,6 +926,7 @@ def compile_script(
             fade_sec = float(args[2]) if len(args) > 2 and re.match(r"^[\d.]+$", args[2]) else 0.0
             state["audio"]["bgmId"] = None
             state["audio"]["bgmUrl"] = None
+            state["audio"]["bgmLoop"] = None
             state["audio"]["bgmTitle"] = None
             attach_event({"type": "bgm_stop", "fadeSec": fade_sec})
             continue

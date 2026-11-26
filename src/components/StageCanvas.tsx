@@ -1556,7 +1556,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           break;
         case "bgm_play":
         case "bgm_stop":
-          if (ev.audio) audioMixer.syncBgm(ev.audio.bgmUrl, ev.audio.bgmVolume);
+          if (ev.audio) audioMixer.syncBgm(ev.audio.bgmUrl, ev.audio.bgmVolume, ev.audio.bgmLoop ?? null);
           break;
         case "se_play":
           if (!ev.seUrl) break;

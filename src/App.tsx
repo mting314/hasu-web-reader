@@ -474,7 +474,7 @@ export default function App() {
     }
 
     const snap = currentTurn.stateBefore;
-    AudioMixer.syncBgm(snap.audio.bgmUrl, snap.audio.bgmVolume);
+    AudioMixer.syncBgm(snap.audio.bgmUrl, snap.audio.bgmVolume, snap.audio.bgmLoop ?? null);
     // Reading in order, beds the line's opening starts or stops are left to those SE commands
     // (scheduled at offset 0), which carry the script's fade times.
     const openingBeds =

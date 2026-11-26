@@ -1,4 +1,5 @@
 import type { AmbienceBed } from "../types/scenario";
+import { BgmLoop } from "./bgmLoop";
 
 export type Vowel = "A" | "I" | "U" | "E" | "O";
 
@@ -71,7 +72,14 @@ export class AudioMixer {
   private vowelCandidateSince = 0;
 
   // --- music & sound effects ---
+  /** fallback when Web Audio can't play the track (no AudioContext, decode failure) */
   private bgmAudio: HTMLAudioElement;
+  private bgmFallback = false;
+  private bgmLoop: BgmLoop | null = null;
+  private bgmLoopPoints: [number, number] | null = null;
+  private bgmBuffers = new Map<string, Promise<AudioBuffer | null>>();
+  /** bumped on every track change so a late decode never starts an old track */
+  private bgmToken = 0;
   private currentBgmUrl: string | null = null;
   private scriptBgmVol = 1.0;
   /** every live SE element, including ones that are fading out */
@@ -124,6 +132,7 @@ export class AudioMixer {
       this.voiceAudio.volume = clamp01(master * this.voiceVolume);
     }
     this.bgmAudio.volume = clamp01(master * this.bgmVolume * this.scriptBgmVol);
+    if (this.bgmLoop) this.bgmLoop.volume = master * this.bgmVolume * this.scriptBgmVol;
     for (const t of this.tracks) this.applySeVolume(t);
   }
 
@@ -153,6 +162,7 @@ export class AudioMixer {
         this.timeData = new Float32Array(analyser.fftSize);
         this.freqData = new Uint8Array(analyser.frequencyBinCount);
         this.applyVolumes();
+        if (this.currentBgmUrl && !this.bgmLoop && !this.bgmFallback) this.attachBgm(this.bgmToken);
       } catch {
         this.ctx = null;
         this.analyser = null;
@@ -368,59 +378,124 @@ export class AudioMixer {
   private bgmUserPaused = false;
   private hiddenPausedState: {
     voice: boolean;
-    bgm: boolean;
     seIds: string[];
     oneShotTracks: SeTrack[];
     pausedAt: number;
   } | null = null;
 
-  public syncBgm(url: string | null, scriptVolume = 1.0) {
+  public syncBgm(url: string | null, scriptVolume = 1.0, loop: [number, number] | null = null) {
     this.scriptBgmVol = scriptVolume;
     this.applyVolumes();
-    if (!url) {
-      this.bgmAudio.pause();
-      this.currentBgmUrl = null;
-      this.bgmUserPaused = false;
+    if (url === this.currentBgmUrl) {
+      if (url && !this.bgmUserPaused && !this.hiddenPausedState) this.startBgm();
       return;
     }
-    if (this.currentBgmUrl === url) {
-      if (this.bgmAudio.paused && !this.bgmUserPaused) {
-        this.bgmAudio.play().catch(() => {});
-      }
-      return;
-    }
+    this.detachBgm();
     this.currentBgmUrl = url;
+    this.bgmLoopPoints = loop;
     this.bgmUserPaused = false;
+    if (url) this.attachBgm(this.bgmToken);
+  }
+
+  private detachBgm() {
+    this.bgmToken++;
+    this.bgmLoop?.destroy();
+    this.bgmLoop = null;
+    this.bgmAudio.pause();
+    this.bgmFallback = false;
+  }
+
+  /** Decode the current track and start its loop (once there's an AudioContext, i.e. after the
+   * first user gesture; ensureContext calls back here). */
+  private attachBgm(token: number) {
+    const url = this.currentBgmUrl;
+    const ctx = this.ctx;
+    if (!url) return;
+    if (!ctx) {
+      if (!this.canUseWebAudio()) this.useBgmFallback(url);
+      return;
+    }
+    let buffer = this.bgmBuffers.get(url);
+    if (!buffer) {
+      buffer = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.arrayBuffer();
+        })
+        .then((data) => ctx.decodeAudioData(data))
+        .catch((e) => {
+          console.warn(`[AudioMixer] BGM decode failed, falling back to <audio loop>: ${url}`, e);
+          return null;
+        });
+      this.bgmBuffers.set(url, buffer);
+    }
+    buffer.then((buf) => {
+      if (token !== this.bgmToken) return;
+      if (!buf) {
+        this.bgmBuffers.delete(url);
+        this.useBgmFallback(url);
+        return;
+      }
+      this.bgmLoop = new BgmLoop(ctx, ctx.destination, buf, this.bgmLoopPoints);
+      this.applyVolumes();
+      if (!this.bgmUserPaused && !this.hiddenPausedState) this.bgmLoop.play();
+    });
+  }
+
+  private canUseWebAudio() {
+    return Boolean(
+      window.AudioContext || (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext
+    );
+  }
+
+  private useBgmFallback(url: string) {
+    this.bgmFallback = true;
     this.bgmAudio.src = url;
     this.bgmAudio.currentTime = 0;
     this.applyVolumes();
-    this.bgmAudio.play().catch(() => {});
+    if (!this.bgmUserPaused && !this.hiddenPausedState) this.bgmAudio.play().catch(() => {});
+  }
+
+  private startBgm() {
+    if (this.bgmLoop) this.bgmLoop.play();
+    else if (this.bgmFallback && this.bgmAudio.paused) this.bgmAudio.play().catch(() => {});
+  }
+
+  private pauseBgm() {
+    this.bgmLoop?.pause();
+    if (this.bgmFallback) this.bgmAudio.pause();
   }
 
   public isBgmPlaying(): boolean {
-    return Boolean(this.currentBgmUrl && !this.bgmAudio.paused);
+    if (!this.currentBgmUrl) return false;
+    if (this.bgmLoop) return !this.bgmLoop.paused;
+    return this.bgmFallback && !this.bgmAudio.paused;
   }
 
   public toggleBgmPlayPause(): boolean {
     if (!this.currentBgmUrl) return false;
-    if (this.bgmAudio.paused) {
-      this.bgmUserPaused = false;
-      this.bgmAudio.play().catch(() => {});
-      return true;
-    } else {
+    if (this.isBgmPlaying()) {
       this.bgmUserPaused = true;
-      this.bgmAudio.pause();
+      this.pauseBgm();
       return false;
     }
+    this.bgmUserPaused = false;
+    this.startBgm();
+    return true;
   }
 
   public getBgmTime(): { currentTime: number; duration: number } {
+    if (this.bgmLoop) return { currentTime: this.bgmLoop.currentTime, duration: this.bgmLoop.duration };
     const dur = Number.isFinite(this.bgmAudio.duration) ? this.bgmAudio.duration : 0;
     const cur = Number.isFinite(this.bgmAudio.currentTime) ? this.bgmAudio.currentTime : 0;
     return { currentTime: cur, duration: dur };
   }
 
   public seekBgm(timeSec: number) {
+    if (this.bgmLoop) {
+      this.bgmLoop.currentTime = Math.max(0, Math.min(this.bgmLoop.duration, timeSec));
+      return;
+    }
     if (!this.currentBgmUrl || !Number.isFinite(this.bgmAudio.duration)) return;
     try {
       this.bgmAudio.currentTime = Math.max(0, Math.min(this.bgmAudio.duration, timeSec));
@@ -435,7 +510,7 @@ export class AudioMixer {
     const activeSeIds: string[] = [];
     const oneShotTracks: SeTrack[] = [];
     if (voiceWasPlaying) this.voiceAudio.pause();
-    if (bgmWasPlaying) this.bgmAudio.pause();
+    if (bgmWasPlaying) this.pauseBgm();
     for (const [id, t] of this.ambience.entries()) {
       if (!t.el.paused) {
         t.el.pause();
@@ -450,7 +525,6 @@ export class AudioMixer {
     }
     this.hiddenPausedState = {
       voice: voiceWasPlaying,
-      bgm: bgmWasPlaying,
       seIds: activeSeIds,
       oneShotTracks,
       pausedAt: performance.now(),
@@ -470,9 +544,8 @@ export class AudioMixer {
     if (st.voice && this.currentVoiceUrl) {
       this.voiceAudio.play().catch(() => {});
     }
-    if (st.bgm && this.currentBgmUrl && !this.bgmUserPaused) {
-      this.bgmAudio.play().catch(() => {});
-    }
+    // A track that finished decoding while hidden hasn't started yet: start it too.
+    if (this.currentBgmUrl && !this.bgmUserPaused) this.startBgm();
     for (const id of st.seIds) {
       const t = this.ambience.get(id);
       if (t && t.el.paused) t.el.play().catch(() => {});
@@ -608,7 +681,7 @@ export class AudioMixer {
 
   public stopAll() {
     this.stopVoice();
-    this.bgmAudio.pause();
+    this.detachBgm();
     this.currentBgmUrl = null;
     for (const t of Array.from(this.tracks)) this.disposeTrack(t);
     this.ambience.clear();
