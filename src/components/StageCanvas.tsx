@@ -183,7 +183,8 @@ function setUnityLocalTransform(
 }
 
 /** An unlit material for a prop exported from the raw data (`material.extras.unity`): its main
- * texture times its colour, like Universal Render Pipeline/Unlit (most hand props). */
+ * texture (with the slot's tiling/offset) times its colour, transparent or alpha-clipped like the
+ * material, as Universal Render Pipeline/Unlit draws it (most hand props). */
 async function gamePropMaterial(mat: THREE.Material, parser: any): Promise<THREE.Material> {
   const unity = mat.userData?.unity;
   let map = (mat as THREE.MeshBasicMaterial).map ?? null;
@@ -192,9 +193,28 @@ async function gamePropMaterial(mat: THREE.Material, parser: any): Promise<THREE
     map = await parser.getDependency("texture", base.index).catch(() => null);
     if (map) map.colorSpace = THREE.SRGBColorSpace;
   }
-  const out = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide });
+  const [sx, sy] = base?.scale ?? [1, 1];
+  const [ox, oy] = base?.offset ?? [0, 0];
+  if (map && (sx !== 1 || sy !== 1 || ox !== 0 || oy !== 0)) {
+    // Unity samples uv * scale + offset with v up; the export flips v (v' = 1 - v), so in three's
+    // terms that is repeat (sx, sy) and offset (ox, 1 - sy - oy)
+    map = map.clone();
+    map.repeat.set(sx, sy);
+    map.offset.set(ox, 1 - sy - oy);
+    map.needsUpdate = true;
+  }
+  const floats = unity?.floats ?? {};
+  const shader: string = unity?.shader ?? "";
   const color = unity?.colors?._BaseColor ?? unity?.colors?._Color;
+  const out = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide });
   if (color) out.color.setRGB(color[0], color[1], color[2], THREE.SRGBColorSpace);
+  if (floats._Surface === 1 || /Transparent(?! Cutout)|Particles/.test(shader)) {
+    out.transparent = true;
+    out.depthWrite = false;
+    out.opacity = color?.[3] ?? 1;
+    if (shader.includes("Additive")) out.blending = THREE.AdditiveBlending;
+  }
+  if (floats._AlphaClip === 1 || shader.includes("Cutout")) out.alphaTest = floats._Cutoff ?? 0.5;
   return out;
 }
 
@@ -1527,9 +1547,17 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         try {
           const group = await loadPropModel(pState, alias);
           if (!sceneRef.current) return;
-          sceneRef.current.add(group);
-          loadedProp = { alias, id: pState.id, group };
-          propsRef.current.set(alias, loadedProp);
+          // a concurrent sync (the line's snapshot and a prop_show event) may have placed it
+          // while this one loaded: keep a single copy on stage
+          const placed = propsRef.current.get(alias);
+          if (placed?.id === pState.id) {
+            loadedProp = placed;
+          } else {
+            if (placed) sceneRef.current.remove(placed.group);
+            sceneRef.current.add(group);
+            loadedProp = { alias, id: pState.id, group };
+            propsRef.current.set(alias, loadedProp);
+          }
         } catch (e) {
           console.warn(`[StageCanvas] Prop load failed for ${alias}:`, e);
           continue;

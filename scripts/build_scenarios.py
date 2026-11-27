@@ -945,13 +945,18 @@ def compile_script(
                 socket = ITEM_SOCKETS.get(where)
                 if socket is None:
                     print(f"  [warn] {script_id}:{line_num}: socket {where} isn't in {ITEM_SOCKETS_PATH.name}")
-                    continue
-                item = {"bone": None, "socketPath": socket["targetBone"], "position": socket["position"],
-                        "rotation": socket["rotation"], "scale": socket["scale"]}
-            model = prop_model(prop_id)
-            if model is None or char_name not in state["characters"]:
+                item = socket and {"bone": None, "socketPath": socket["targetBone"], "position": socket["position"],
+                                   "rotation": socket["rotation"], "scale": socket["scale"]}
+            if char_name not in state["characters"]:
                 continue
-            state["characters"][char_name]["items"][key] = {"id": prop_id, "key": key, **model, **item}
+            held = state["characters"][char_name]["items"]
+            model = prop_model(prop_id) if item else None
+            if model is None:
+                # can't be placed: the key is emptied, not left with an older prop
+                if held.pop(key, None) is not None:
+                    attach_event({"type": "char_item", "character": char_name, "key": key, "id": None})
+                continue
+            held[key] = {"id": prop_id, "key": key, **model, **item}
             attach_event({"type": "char_item", "character": char_name, "key": key, "id": prop_id})
             continue
 

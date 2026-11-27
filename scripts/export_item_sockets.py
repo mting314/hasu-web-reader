@@ -56,9 +56,10 @@ def main() -> None:
         if name not in index.by_container:
             print(f"  [missing] {name}")
             continue
-        env, _ = index.load_closure(name)
+        env, bundle = index.load_closure(name)
         for obj in env.objects:
-            if obj.type.name != "MonoBehaviour":
+            # the asset in the named bundle itself, not one its dependencies might also hold
+            if obj.type.name != "MonoBehaviour" or obj.assets_file.parent.name != bundle:
                 continue
             tt = obj.read_typetree()
             if "Socket" not in tt:
