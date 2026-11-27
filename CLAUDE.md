@@ -307,7 +307,11 @@ or every part of a series (6-digit `AdvSeries` id); with no ids it rebuilds ever
 AdvSeries/AdvDatas, `scripts/build_story_index.py`) with `EPISODE_OVERRIDES` for episode 1's
 hand-written English; new parts are merged into the catalog in story order. Translations are
 Hasu-KO's per-part pages (cached as `data_cache/hasuko_<lang>_<id>.html`; some bonus parts have
-none). Afterwards set the index's `available` flags to the compiled files (rerunning
+none) plus, for the 103rd term only, Idol Story's English (`en_idolst`, `scripts/idolst_en.py`):
+idol.st's wiki is the public GitHub wiki `MagiCircles/IdolStoryWiki.wiki`, cached as
+`data_cache/idolst_en_<id>.md`. Its rows are aligned by speaker sequence, and same-speaker runs
+that idol.st merges or splits are re-cut using Hasu-KO's English as the reference. Every
+contributor on the page's credit line goes into the source's `credits` (shown in the Credits panel). Afterwards set the index's `available` flags to the compiled files (rerunning
 `build_story_index.py` also refreshes its Hasu-KO titles, a separate change). Assets must be in
 the store manifest first (export, upload, `scripts/update_store_manifest.sh`); props whose
 hamproductions index entry isn't complete in the store use our self-contained export. The files

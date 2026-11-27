@@ -34,6 +34,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%201%20~%20Part%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -100,6 +151,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300102",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%201%20~%20Part%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -188,6 +290,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300301",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Part%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -288,6 +441,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Part%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -384,6 +588,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300303",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Part%203",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -494,6 +749,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Part%204",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -590,6 +896,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300305",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Part%205",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -689,7 +1046,59 @@
       "descriptionEn": "After Kaho declares that she will \"become the world's greatest school idol,\" Kozue assigns her intense training for the next event in Kanazawa City.",
       "totalTurns": 35,
       "totalDurationSec": 270.0,
-      "translationSources": [],
+      "translationSources": [
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, Epikkyu)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%203%20~%20Intermission",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "Epikkyu",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        }
+      ],
       "assetCounts": {
         "characters": 2,
         "backgrounds": 2,
@@ -747,6 +1156,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300701",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%207%20~%20Part%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -835,6 +1295,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300702",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%207%20~%20Part%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -945,6 +1456,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%207%20~%20Part%203",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -1011,6 +1573,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300704",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%207%20~%20Part%204",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -1099,6 +1712,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10300705",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%207%20~%20Part%205",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -1229,6 +1893,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -1345,6 +2060,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301203",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -1495,6 +2261,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%203",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -1583,6 +2400,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%204",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -1659,6 +2527,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301206",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%205",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -1799,6 +2718,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%206",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -1885,6 +2855,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301208",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%207",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -2005,6 +3026,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Part%208",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -2103,6 +3175,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Epilogue%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -2189,6 +3312,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301211",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2012%20~%20Epilogue%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -2297,6 +3471,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301601",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2016%20~%20Part%201",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",
@@ -2437,6 +3662,57 @@
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
         {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2016%20~%20Part%202",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "ko_hasuko",
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
@@ -2523,6 +3799,57 @@
           "url": "https://hasu-ko.vercel.app/en/story/10301603",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "en_idolst",
+          "lang": "en",
+          "label": "English (Idol Story)",
+          "attribution": "Idol Story (Luna_LL, Eagles, zura, Denzi, epipyon)",
+          "url": "https://idol.st/wiki/Link!%20Like!:%20Episode%2016%20~%20Part%203",
+          "homepage": "https://idol.st/wiki/Link!%20Like!:%20Story/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+          "credits": [
+            {
+              "role": "Translation",
+              "people": [
+                {
+                  "name": "Luna_LL",
+                  "url": "https://idol.st/user/4930/Luna-LL/"
+                }
+              ]
+            },
+            {
+              "role": "Proofreaders",
+              "people": [
+                {
+                  "name": "Eagles",
+                  "url": "https://idol.st/user/6361/Eagles/"
+                },
+                {
+                  "name": "zura",
+                  "url": "https://idol.st/user/8044/zura/"
+                }
+              ]
+            },
+            {
+              "role": "YouTube Subs",
+              "people": [
+                {
+                  "name": "Denzi",
+                  "url": "https://idol.st/user/18560/Denzi/"
+                }
+              ]
+            },
+            {
+              "role": "Site & YouTube Graphics",
+              "people": [
+                {
+                  "name": "epipyon",
+                  "url": "https://idol.st/user/15896/Epikkyu/"
+                }
+              ]
+            }
+          ]
         },
         {
           "id": "ko_hasuko",

@@ -29,6 +29,7 @@ PUBLIC_DATA_DIR = PUBLIC_DIR / "data"
 HASU_DUB_DIR = Path("/Users/michaelting/github/hasu-dub")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import idolst_en  # noqa: E402
 import jp_lexer  # noqa: E402
 
 JMDICT_RELEASE_URL = (
@@ -1144,10 +1145,11 @@ def compile_script(
                 offset_sec += t_k["durationSec"]
         i = j
 
-    # All current translations come from the fan project "Hasunosora Activity Record
-    # Translation" (hasu-ko.vercel.app). The site does not name individual translators, so
-    # the project itself is credited. The hasu-dub script is that same English translation
-    # (132/138 lines identical in 10300101) with line breaks merged and light edits for dubbing.
+    # Most translations come from the fan project "Hasunosora Activity Record Translation"
+    # (hasu-ko.vercel.app). The site does not name individual translators, so the project
+    # itself is credited. The hasu-dub script is that same English translation (132/138 lines
+    # identical in 10300101) with line breaks merged and light edits for dubbing. The 103rd
+    # term also has Idol Story's English translation (idol.st), credited per contributor.
     en_map = align_rows([t["speakerEn"] for t in turns], [r["speaker"] for r in en_hasuko])
     # the Korean page has Korean speaker names: reuse the English pairing when its rows match
     if len(ko_hasuko) == len(en_hasuko):
@@ -1162,6 +1164,15 @@ def compile_script(
     if en_hasuko and len(en_map) < len(turns):
         print(f"  [WARN] {script_id}: Hasu-KO {hasuko_id} has {len(en_hasuko)} rows for {len(turns)} lines; "
               f"{len(turns) - len(en_map)} line(s) left without its translation")
+    # aligned after Hasu-KO: its English text guides how Idol Story's merged/split lines are cut
+    idolst = idolst_en.fetch_or_load_idolst(script_id, DATA_CACHE_DIR, STORY_INDEX_PATH)
+    if idolst:
+        idolst_map = idolst_en.align_idolst_turns(turns, idolst["rows"])
+        for i, row in idolst_map.items():
+            turns[i]["translations"]["en_idolst"] = row
+        if len(idolst_map) < len(turns):
+            print(f"  [WARN] {script_id}: Idol Story has {len(idolst['rows'])} rows for {len(turns)} lines; "
+                  f"{len(turns) - len(idolst_map)} line(s) left without its translation")
 
     hasuko_en_url = f"https://hasu-ko.vercel.app/en/story/{hasuko_id}"
     hasuko_ko_url = f"https://hasu-ko.vercel.app/story/{hasuko_id}"
@@ -1185,6 +1196,17 @@ def compile_script(
             "url": hasuko_en_url,
             "homepage": "https://hasu-ko.vercel.app/en/",
             "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+        })
+    if idolst:
+        translation_sources.append({
+            "id": "en_idolst",
+            "lang": "en",
+            "label": "English (Idol Story)",
+            "attribution": idolst["attribution"],
+            "url": idolst["url"],
+            "homepage": idolst["homepage"],
+            "note": idolst["note"],
+            "credits": idolst["credits"],
         })
     if ko_hasuko:
         translation_sources.append({
