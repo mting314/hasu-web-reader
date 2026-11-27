@@ -77,7 +77,9 @@ export async function attachCastSwap(opts: {
   }
   if (retarget.missing.length) console.info(`[castSwap] ${opts.entry.id}: unmapped bones`, retarget.missing);
   const face = createPjskFace(opts.source, model);
-  const springs = createUtjSpringBones(model); // on the rest pose, before any scaling
+  // On the rest pose, before any scaling. readerCollision: keep the hair out of the body in Hasu's
+  // tilted and seated poses (more colliders than the game gives it, along the whole bone).
+  const springs = createUtjSpringBones(model, { readerCollision: true });
   const nativeTop = restTop(model);
   // CharacterModel.headTransform, and SekaiCharacterHair's offset (export_pjsk_model.py extras)
   const head = model.getObjectByName("Head") ?? null;
