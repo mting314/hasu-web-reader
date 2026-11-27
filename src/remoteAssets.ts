@@ -1,53 +1,131 @@
 import * as THREE from "three";
 
 /**
- * Optional remote asset hosting (the hasu-web-reader-assets GCS bucket).
+ * Optional remote asset hosting (the hasu-web-reader-assets GCS bucket / Cloud Run signer)
+ * and subpath-aware URL resolution (e.g. `/hasu-web-reader/pjsk/` on GitHub Pages).
  *
- * Scenario data refers to assets as `/assets/<path>` (the local public/assets cache). When
- * VITE_ASSET_BASE_URL is set, any such request whose <path> starts with one of the
- * comma-separated VITE_REMOTE_ASSET_PREFIXES (empty = all assets) is served from
- * `${VITE_ASSET_BASE_URL}/<path>` instead, e.g. in .env.local:
- *
- *   VITE_ASSET_BASE_URL=https://storage.googleapis.com/hasu-web-reader-assets
- *   VITE_REMOTE_ASSET_PREFIXES=3d/
- *
- * Scenario data is rewritten once on load (rewriteAssetUrls), which covers audio, <img> and
- * prefetch; Three.js loads and fetch() calls are also rewritten as a backstop for URLs built
- * in code (e.g. a costume's `_materials.json` derived from its GLB URL).
+ * Protected prefixes (`pjsk/`) require a private dev key saved once per browser via
+ * `#devKey=<secret>` (or `?devKey=<secret>`, immediately stripped from the URL bar and stored
+ * in `localStorage["hasu-reader.devKey"]`; `#devKey=clear` removes it).
  */
 const BASE = String(import.meta.env.VITE_ASSET_BASE_URL ?? "").replace(/\/+$/, "");
+const APP_BASE = String(import.meta.env.BASE_URL || "/").replace(/\/?$/, "/");
 const PREFIXES = String(import.meta.env.VITE_REMOTE_ASSET_PREFIXES ?? "")
   .split(",")
   .map((p) => p.trim())
   .filter(Boolean);
+const PROTECTED_PREFIXES = ["pjsk/"];
+const DEV_KEY_STORAGE = "hasu-reader.devKey";
+
+function consumeDevKeyFromUrl(reloadOnChange = false): void {
+  if (typeof window === "undefined") return;
+  try {
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ""));
+    const raw = hashParams.get("devKey") ?? url.searchParams.get("devKey");
+    if (raw === null) return;
+    if (raw === "" || raw === "clear" || raw === "off") {
+      localStorage.removeItem(DEV_KEY_STORAGE);
+    } else {
+      localStorage.setItem(DEV_KEY_STORAGE, raw.trim());
+    }
+    url.searchParams.delete("devKey");
+    if (hashParams.has("devKey")) {
+      hashParams.delete("devKey");
+      const nextHash = hashParams.toString();
+      url.hash = nextHash ? `#${nextHash}` : "";
+    }
+    window.history.replaceState(null, "", url.toString());
+    if (reloadOnChange) window.location.reload();
+  } catch {
+    // ignore storage / URL errors
+  }
+}
+
+consumeDevKeyFromUrl(false);
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => consumeDevKeyFromUrl(true));
+}
+
+function getDevKey(): string {
+  try {
+    const fromEnv = String(import.meta.env.VITE_DEV_ACCESS_KEY ?? "").trim();
+    if (fromEnv) return fromEnv;
+    return (localStorage.getItem(DEV_KEY_STORAGE) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/** True when protected dev-only asset prefixes (`pjsk/`) can be loaded in this session. */
+export function hasDevKey(): boolean {
+  return !BASE || Boolean(getDevKey());
+}
+
+/** Resolve a file under `public/data/` respecting Vite's `base` subpath. */
+export function dataUrl(relPath: string): string {
+  return `${APP_BASE}data/${relPath.replace(/^\/+/, "")}`;
+}
+
+function extractAssetRelPath(url: string): string | null {
+  if (url.startsWith("/assets/")) {
+    return url.slice("/assets/".length);
+  }
+  if (APP_BASE !== "/" && url.startsWith(`${APP_BASE}assets/`)) {
+    return url.slice(`${APP_BASE}assets/`.length);
+  }
+  try {
+    const u = new URL(url, window.location.href);
+    if (u.origin === window.location.origin) {
+      if (u.pathname.startsWith("/assets/")) {
+        return u.pathname.slice("/assets/".length) + u.search;
+      }
+      if (APP_BASE !== "/" && u.pathname.startsWith(`${APP_BASE}assets/`)) {
+        return u.pathname.slice(`${APP_BASE}assets/`.length) + u.search;
+      }
+    }
+  } catch {
+    // not a URL we handle
+  }
+  return null;
+}
+
+function matchesPrefixList(relPath: string, list: string[]): boolean {
+  const withSlash = relPath.endsWith("/") ? relPath : `${relPath}/`;
+  return list.some((p) => {
+    const norm = p.endsWith("/") ? p : `${p}/`;
+    return relPath.startsWith(p) || withSlash.startsWith(norm);
+  });
+}
+
+function matchesPrefix(relPath: string): boolean {
+  if (PREFIXES.length === 0) return true;
+  return matchesPrefixList(relPath, PREFIXES);
+}
 
 export function assetUrl(url: string): string {
-  if (!BASE) return url;
-  let path: string | null = null;
-  if (url.startsWith("/assets/")) {
-    path = url.slice("/assets/".length);
-  } else {
-    try {
-      const u = new URL(url, window.location.href);
-      if (u.origin === window.location.origin && u.pathname.startsWith("/assets/")) {
-        path = u.pathname.slice("/assets/".length) + u.search;
-      }
-    } catch {
-      // not a URL we handle
-    }
-  }
+  const path = extractAssetRelPath(url);
   if (path === null) return url;
-  if (PREFIXES.length > 0 && !PREFIXES.some((p) => path!.startsWith(p))) return url;
-  return `${BASE}/${path}`;
+  if (BASE && matchesPrefix(path)) {
+    if (matchesPrefixList(path, PROTECTED_PREFIXES)) {
+      const dk = getDevKey();
+      return dk ? `${BASE}/_k/${encodeURIComponent(dk)}/${path}` : `${BASE}/${path}`;
+    }
+    return `${BASE}/${path}`;
+  }
+  if (APP_BASE !== "/" && url.startsWith("/assets/")) {
+    return `${APP_BASE}assets/${path}`;
+  }
+  return url;
 }
 
 /**
- * Rewrite every "/assets/..." string inside loaded scenario data to its remote URL, so all
- * consumers (audio elements, <img>, prefetch, Three.js) pick up the bucket without each
- * call site knowing about it. Returns the data unchanged when remote hosting is off.
+ * Rewrite every "/assets/..." string inside loaded scenario/catalog data to its resolved URL,
+ * so all consumers (audio elements, <img>, prefetch, Three.js) pick up remote or subpath hosting
+ * without each call site knowing about it.
  */
 export function rewriteAssetUrls<T>(data: T): T {
-  if (!BASE) return data;
+  if (!BASE && APP_BASE === "/") return data;
   const walk = (v: unknown): unknown => {
     if (typeof v === "string") return v.startsWith("/assets/") ? assetUrl(v) : v;
     if (Array.isArray(v)) {
@@ -65,12 +143,15 @@ export function rewriteAssetUrls<T>(data: T): T {
 }
 
 export function installRemoteAssets() {
-  if (!BASE) return;
+  consumeDevKeyFromUrl(false);
+  if (!BASE && APP_BASE === "/") return;
   THREE.DefaultLoadingManager.setURLModifier(assetUrl);
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
     nativeFetch(typeof input === "string" ? assetUrl(input) : input, init);
-  console.info(
-    `[assets] ${PREFIXES.length ? PREFIXES.map((p) => `/assets/${p}*`).join(", ") : "all /assets/*"} -> ${BASE}`
-  );
+  if (BASE) {
+    console.info(
+      `[assets] ${PREFIXES.length ? PREFIXES.map((p) => `/assets/${p}*`).join(", ") : "all /assets/*"} -> ${BASE}`
+    );
+  }
 }

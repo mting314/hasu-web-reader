@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { CastHeightMode, PjskModelEntry } from "./engine/castSwap/castSwap";
+import { assetUrl, hasDevKey, rewriteAssetUrls } from "./remoteAssets";
 
 /**
  * The user's PJSK cast (which Project Sekai model stands in for which Hasu character), kept in
@@ -76,8 +77,10 @@ let catalog: Promise<PjskModelEntry[]> | null = null;
 
 /** The exported PJSK models (`/assets/pjsk/models.json`, written by scripts/export_pjsk_model.py). */
 export function loadPjskCatalog(): Promise<PjskModelEntry[]> {
-  catalog ??= fetch("/assets/pjsk/models.json")
+  if (!hasDevKey()) return Promise.resolve([]);
+  catalog ??= fetch(assetUrl("/assets/pjsk/models.json"))
     .then((r) => (r.ok ? r.json() : []))
+    .then((entries: PjskModelEntry[]) => rewriteAssetUrls(entries))
     .catch(() => []);
   return catalog;
 }

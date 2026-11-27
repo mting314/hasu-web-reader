@@ -1,0 +1,80 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main", "pjsk-cast-swap"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: site-main
+
+      - name: Checkout pjsk-cast-swap
+        id: checkout-pjsk
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: pjsk-cast-swap
+          path: site-pjsk
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: site-main/package-lock.json
+
+      - name: Install & test main
+        working-directory: site-main
+        run: |
+          npm ci
+          node services/asset-signer/server.test.mjs
+
+      - name: Build main (/hasu-web-reader/)
+        working-directory: site-main
+        env:
+          VITE_BASE_PATH: /hasu-web-reader/
+          VITE_ASSET_BASE_URL: https://hasu-asset-signer-278890546984.us-central1.run.app
+        run: npm run build
+
+      - name: Build pjsk-cast-swap (/hasu-web-reader/pjsk/)
+        if: steps.checkout-pjsk.outcome == 'success'
+        working-directory: site-pjsk
+        env:
+          VITE_BASE_PATH: /hasu-web-reader/pjsk/
+          VITE_ASSET_BASE_URL: https://hasu-asset-signer-278890546984.us-central1.run.app
+        run: |
+          npm ci
+          npm run build
+          cp -R dist ../site-main/dist/pjsk
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site-main/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

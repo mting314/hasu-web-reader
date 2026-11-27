@@ -10,6 +10,7 @@ import Minimap from "./Minimap";
 import { fmt } from "./format";
 import { MoveArrows, cueMemberFor, leadFor } from "./moves";
 import { MoveCue, MoveTicks, useMoves } from "./MoveCues";
+import { assetUrl } from "../remoteAssets";
 
 /**
  * Fes×LIVE 3D choreo viewer: the decoded live motion of every member on a free-camera stage,
@@ -22,7 +23,7 @@ import { MoveCue, MoveTicks, useMoves } from "./MoveCues";
  * URL: live.html?live=fes-20260330&song=aishii_2603  (or &t=<seconds>)
  */
 
-const ASSET_BASE = "/assets/live";
+const ASSET_BASE = assetUrl("/assets/live");
 const RATES = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const CAMERAS: CameraPreset[] = ["front", "back", "left", "right", "top"];
 const FRAME = 1 / 30;
