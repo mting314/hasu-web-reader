@@ -6,6 +6,7 @@ PROJECT="${GCP_PROJECT:-future-name-201021}"
 REGION="${GCP_REGION:-us-central1}"
 SERVICE="${CLOUD_RUN_SERVICE:-hasu-asset-signer}"
 BUCKET="${HASU_ASSET_BUCKET:-hasu-web-reader-assets}"
+SECRET_NAME="${DEV_KEY_SECRET:-hasu-dev-access-key}"
 SA_NAME="hasu-asset-signer"
 SA_EMAIL="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,7 +17,7 @@ if ! gcloud iam service-accounts describe "$SA_EMAIL" --project="$PROJECT" >/dev
     --display-name="Hasu Web Reader GCS V4 URL Signer"
 fi
 
-# Least-privilege: read-only object access on the asset bucket + self signBlob permission.
+# Least-privilege: read-only object access on the asset bucket, self signBlob, and dev-key secret.
 gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
   --project="$PROJECT" \
   --member="serviceAccount:${SA_EMAIL}" \
@@ -26,6 +27,11 @@ gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
   --project="$PROJECT" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+
+gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
+  --project="$PROJECT" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor" >/dev/null
 
 gcloud run deploy "$SERVICE" \
   --project="$PROJECT" \
@@ -37,4 +43,5 @@ gcloud run deploy "$SERVICE" \
   --memory=256Mi \
   --concurrency=250 \
   --max-instances=5 \
-  --env-vars-file="${DIR}/env.yaml"
+  --env-vars-file="${DIR}/env.yaml" \
+  --set-secrets="DEV_ACCESS_KEY=${SECRET_NAME}:latest"

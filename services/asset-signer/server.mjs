@@ -1,12 +1,13 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 
 /**
  * Cloud Run GCS V4 Signed-URL Redirect Service for hasu-web-reader.
  *
- * Validates Origin/Referer and object path prefix, signs a short-lived GCS V4 URL via the
- * keyless IAM Credentials `signBlob` API (cached in memory per instance), and 302-redirects
- * the browser directly to `https://storage.googleapis.com/<bucket>/<path>?X-Goog-...`.
+ * Validates Origin/Referer and object path prefix, enforces DEV_ACCESS_KEY on protected
+ * prefixes (`/_k/<key>/pjsk/...`), signs a short-lived GCS V4 URL via the keyless IAM
+ * Credentials `signBlob` API (cached in memory per instance), and 302-redirects the browser
+ * directly to `https://storage.googleapis.com/<bucket>/<path>?X-Goog-...`.
  */
 
 const PORT = Number(process.env.PORT || 8080);
@@ -16,12 +17,13 @@ const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 2700_000); // 45 min ser
 const BROWSER_MAX_AGE_SEC = Number(process.env.BROWSER_MAX_AGE_SEC || 900); // 15 min browser cache
 const MAX_CACHE_ENTRIES = 20_000;
 
-const DEFAULT_PREFIXES = ["3d/", "assets/", "bgm/", "live/", "pjsk/", "sound/", "story/"];
+const DEFAULT_PREFIXES = ["3d/", "assets/", "bgm/", "live/", "sound/", "story/"];
+const DEFAULT_PROTECTED_PREFIXES = ["pjsk/"];
 const DEFAULT_HOSTS = ["mting314.github.io", "localhost", "127.0.0.1"];
 
 export function parseCsv(raw, fallback) {
-  if (!raw || !raw.trim()) return fallback;
-  return raw
+  if (raw === undefined || raw === null || !String(raw).trim()) return fallback;
+  return String(raw)
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
@@ -49,10 +51,46 @@ export function formatGoogDate(date) {
 }
 
 /**
- * Validate and normalize the URL pathname into a safe bucket-relative object key.
- * Returns `{ ok: true, key }` or `{ ok: false, status, reason }`.
+ * Constant-time comparison of a provided dev key against the configured secret.
  */
-export function validateObjectPath(pathname, allowedPrefixes = DEFAULT_PREFIXES) {
+export function verifyDevKey(provided, expected) {
+  const exp = String(expected || "").trim();
+  const prov = String(provided || "").trim();
+  if (!exp || !prov) return false;
+  const a = createHash("sha256").update(prov, "utf8").digest();
+  const b = createHash("sha256").update(exp, "utf8").digest();
+  return timingSafeEqual(a, b);
+}
+
+/**
+ * Strip optional `/_k/<devKey>/` prefix from pathname before validating the GCS object path.
+ */
+export function extractAuthAndPathname(pathname) {
+  if (pathname && pathname.startsWith("/_k/")) {
+    const rest = pathname.slice("/_k/".length);
+    const slash = rest.indexOf("/");
+    if (slash <= 0) {
+      return { providedKey: null, cleanPathname: "" };
+    }
+    try {
+      const providedKey = decodeURIComponent(rest.slice(0, slash));
+      return { providedKey, cleanPathname: rest.slice(slash) };
+    } catch {
+      return { providedKey: null, cleanPathname: "" };
+    }
+  }
+  return { providedKey: null, cleanPathname: pathname };
+}
+
+/**
+ * Validate and normalize the URL pathname into a safe bucket-relative object key.
+ * Returns `{ ok: true, key, protected: boolean }` or `{ ok: false, status, reason }`.
+ */
+export function validateObjectPath(
+  pathname,
+  allowedPrefixes = DEFAULT_PREFIXES,
+  protectedPrefixes = DEFAULT_PROTECTED_PREFIXES
+) {
   if (!pathname || pathname === "/") {
     return { ok: false, status: 404, reason: "empty path" };
   }
@@ -73,10 +111,13 @@ export function validateObjectPath(pathname, allowedPrefixes = DEFAULT_PREFIXES)
   if (segments.some((seg) => !seg || seg === "." || seg === "..")) {
     return { ok: false, status: 400, reason: "path traversal rejected" };
   }
-  if (!allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
-    return { ok: false, status: 403, reason: "prefix not allowed" };
+  if (protectedPrefixes.some((prefix) => key.startsWith(prefix))) {
+    return { ok: true, key, protected: true };
   }
-  return { ok: true, key };
+  if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
+    return { ok: true, key, protected: false };
+  }
+  return { ok: false, status: 403, reason: "prefix not allowed" };
 }
 
 function extractHostname(headerVal) {
@@ -238,6 +279,8 @@ const CORS_HEADERS = {
 export function createSignerHandler({
   bucket = BUCKET,
   allowedPrefixes = parseCsv(process.env.ALLOWED_PREFIXES, DEFAULT_PREFIXES),
+  protectedPrefixes = parseCsv(process.env.PROTECTED_PREFIXES, DEFAULT_PROTECTED_PREFIXES),
+  devAccessKey = process.env.DEV_ACCESS_KEY || "",
   allowedHosts = parseCsv(process.env.ALLOWED_HOSTS, DEFAULT_HOSTS),
   signUrl = createIamBlobSigner(),
   cacheTtlMs = CACHE_TTL_MS,
@@ -277,9 +320,9 @@ export function createSignerHandler({
   return async function handler(req, res) {
     const rawUrl = req.url || "/";
     const qIdx = rawUrl.indexOf("?");
-    const pathname = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
+    const rawPathname = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx);
 
-    if (pathname === "/healthz") {
+    if (rawPathname === "/healthz") {
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end('{"ok":true}');
       return;
@@ -308,13 +351,23 @@ export function createSignerHandler({
       return;
     }
 
-    const validated = validateObjectPath(pathname, allowedPrefixes);
+    const { providedKey, cleanPathname } = extractAuthAndPathname(rawPathname);
+    const validated = validateObjectPath(cleanPathname, allowedPrefixes, protectedPrefixes);
     if (!validated.ok) {
       res.writeHead(validated.status, {
         ...CORS_HEADERS,
         "Content-Type": "text/plain; charset=utf-8",
       });
       res.end(validated.reason);
+      return;
+    }
+
+    if (validated.protected && !verifyDevKey(providedKey, devAccessKey)) {
+      res.writeHead(403, {
+        ...CORS_HEADERS,
+        "Content-Type": "text/plain; charset=utf-8",
+      });
+      res.end("Forbidden: dev key required");
       return;
     }
 
@@ -327,7 +380,7 @@ export function createSignerHandler({
       });
       res.end();
     } catch (err) {
-      console.error("[asset-signer] failed to sign:", validated.key, err);
+      console.error("[asset-signer] failed to sign:", validated.key, err?.message || err);
       res.writeHead(502, {
         ...CORS_HEADERS,
         "Content-Type": "text/plain; charset=utf-8",

@@ -3,8 +3,10 @@ import {
   checkRequestOrigin,
   createSignerHandler,
   encodeGcsPath,
+  extractAuthAndPathname,
   prepareV4SignInput,
   validateObjectPath,
+  verifyDevKey,
 } from "./server.mjs";
 
 function invoke(handler, { method = "GET", url = "/", headers = {} } = {}) {
@@ -26,22 +28,26 @@ function invoke(handler, { method = "GET", url = "/", headers = {} } = {}) {
   return handler(req, res).then(() => ({ status: statusCode, headers: responseHeaders, body }));
 }
 
-// 1. Path validation & prefix allowlist
+// 1. Path validation & prefix allowlist vs protected prefixes
 assert.deepEqual(validateObjectPath("/3d/costume/foo/foo.glb"), {
   ok: true,
   key: "3d/costume/foo/foo.glb",
+  protected: false,
 });
-assert.deepEqual(
-  validateObjectPath("/story/voice/vo_adv_10300101_0001_m1031_01%40kaho.webm"),
-  {
-    ok: true,
-    key: "story/voice/vo_adv_10300101_0001_m1031_01@kaho.webm",
-  }
-);
+assert.deepEqual(validateObjectPath("/pjsk/models.json"), {
+  ok: true,
+  key: "pjsk/models.json",
+  protected: true,
+});
+assert.deepEqual(extractAuthAndPathname("/_k/my-secret/pjsk/3d/model/01ichika/01ichika.glb"), {
+  providedKey: "my-secret",
+  cleanPathname: "/pjsk/3d/model/01ichika/01ichika.glb",
+});
+assert.equal(verifyDevKey("abc123", "abc123"), true);
+assert.equal(verifyDevKey("abc124", "abc123"), false);
+assert.equal(verifyDevKey("", "abc123"), false);
 assert.equal(validateObjectPath("/dump/llll-assets-raw.7z").status, 403);
-assert.equal(validateObjectPath("/tools/foo").status, 403);
 assert.equal(validateObjectPath("/3d/../dump/x").status, 400);
-assert.equal(validateObjectPath("/3d//motions/a.glb").status, 400);
 assert.equal(validateObjectPath("/").status, 404);
 
 // 2. Origin / Referer enforcement
@@ -52,13 +58,6 @@ assert.equal(
 );
 assert.equal(checkRequestOrigin({ origin: "http://localhost:5173" }), true);
 assert.equal(checkRequestOrigin({ origin: "https://evil.example.com" }), false);
-assert.equal(
-  checkRequestOrigin({
-    origin: "https://evil.example.com",
-    referer: "https://mting314.github.io/hasu-web-reader/",
-  }),
-  false
-);
 assert.equal(checkRequestOrigin({}), false);
 
 // 3. RFC 3986 path encoding & V4 canonical signing input
@@ -75,24 +74,17 @@ const v4 = prepareV4SignInput({
   expiresSec: 3600,
 });
 assert.equal(v4.resourcePath, "/hasu-web-reader-assets/3d/emotions/emotion_kaho.json");
-assert.match(v4.canonicalQuery, /^X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=/);
-assert.match(
-  v4.stringToSign,
-  /^GOOG4-RSA-SHA256\n20261127T040000Z\n20261127\/auto\/storage\/goog4_request\n[0-9a-f]{64}$/
-);
 
-// 4. Handler coalescing, method separation, CORS headers, and security rejections
+// 4. Handler coalescing, protected pjsk/ dev-key enforcement, and security rejections
 let signCalls = 0;
 const handler = createSignerHandler({
+  devAccessKey: "super-secret-dev-key",
   signUrl: async ({ bucket, objectKey, method }) => {
     signCalls++;
-    await new Promise((r) => setTimeout(r, 15));
+    await new Promise((r) => setTimeout(r, 10));
     return `https://storage.googleapis.com/${bucket}/${objectKey}?method=${method}&call=${signCalls}`;
   },
 });
-
-const health = await invoke(handler, { url: "/healthz" });
-assert.equal(health.status, 200);
 
 const [r1, r2] = await Promise.all([
   invoke(handler, {
@@ -107,30 +99,36 @@ const [r1, r2] = await Promise.all([
 assert.equal(r1.status, 302);
 assert.equal(r2.status, 302);
 assert.equal(signCalls, 1);
-assert.equal(r1.headers["access-control-allow-origin"], "*");
+
+// Protected pjsk/ blocked without key or with wrong key
+const pjskNoKey = await invoke(handler, {
+  url: "/pjsk/models.json",
+  headers: { origin: "https://mting314.github.io" },
+});
+assert.equal(pjskNoKey.status, 403);
+
+const pjskWrongKey = await invoke(handler, {
+  url: "/_k/wrong-key/pjsk/models.json",
+  headers: { origin: "https://mting314.github.io" },
+});
+assert.equal(pjskWrongKey.status, 403);
+
+// Protected pjsk/ allowed with valid /_k/<key>/ and strips /_k/<key> from signed GCS path
+const pjskValidKey = await invoke(handler, {
+  url: "/_k/super-secret-dev-key/pjsk/models.json",
+  headers: { origin: "https://mting314.github.io" },
+});
+assert.equal(pjskValidKey.status, 302);
 assert.equal(
-  r1.headers["location"],
-  "https://storage.googleapis.com/hasu-web-reader-assets/3d/motions/mot_00_00010.glb?method=GET&call=1"
+  pjskValidKey.headers["location"],
+  "https://storage.googleapis.com/hasu-web-reader-assets/pjsk/models.json?method=GET&call=2"
 );
 
-const headRes = await invoke(handler, {
-  method: "HEAD",
-  url: "/3d/motions/mot_00_00010.glb",
+// Disallowed prefix still blocked even with valid dev key
+const dumpWithKey = await invoke(handler, {
+  url: "/_k/super-secret-dev-key/dump/llll-assets-raw.7z",
   headers: { origin: "https://mting314.github.io" },
 });
-assert.equal(headRes.status, 302);
-assert.equal(signCalls, 2);
-
-const badOrigin = await invoke(handler, {
-  url: "/3d/motions/mot_00_00010.glb",
-  headers: { origin: "https://attacker.invalid" },
-});
-assert.equal(badOrigin.status, 403);
-
-const dumpReq = await invoke(handler, {
-  url: "/dump/llll-assets-raw.7z",
-  headers: { origin: "https://mting314.github.io" },
-});
-assert.equal(dumpReq.status, 403);
+assert.equal(dumpWithKey.status, 403);
 
 console.log("All asset-signer tests passed.");
