@@ -98,6 +98,8 @@ export class AudioMixer {
   /** active ambience beds by id */
   private ambience = new Map<string, SeTrack>();
   private fadeTimer: number | null = null;
+  /** called when the AudioContext starts running (autoplay allowed, or the first gesture) */
+  private audioStartListeners = new Set<() => void>();
 
   private readonly unlock = () => {
     this.ensureContext();
@@ -119,9 +121,28 @@ export class AudioMixer {
       this.fireVoiceEnded();
     });
 
-    // Browsers only start audio after a user gesture; resume everything on the first one.
+    // Browsers only start audio after a user gesture, unless the site may autoplay (Chrome allows
+    // it on sites the user plays a lot of media on: its Media Engagement Index). Create the
+    // context now so its state tells which (autoplayBlocked), and resume it on the first gesture.
+    this.ensureContext();
     window.addEventListener("pointerdown", this.unlock, { capture: true });
     window.addEventListener("keydown", this.unlock, { capture: true });
+  }
+
+  /** True while the browser holds audio until the page gets a user gesture. */
+  public get autoplayBlocked(): boolean {
+    if (this.ctx) return this.ctx.state === "suspended";
+    const policy = (
+      navigator as unknown as { getAutoplayPolicy?: (type: string) => string }
+    ).getAutoplayPolicy?.("mediaelement");
+    if (policy) return policy === "disallowed";
+    return !(navigator.userActivation?.hasBeenActive ?? false);
+  }
+
+  /** Calls `cb` whenever the AudioContext starts running; returns an unsubscribe function. */
+  public onAudioStarted(cb: () => void): () => void {
+    this.audioStartListeners.add(cb);
+    return () => this.audioStartListeners.delete(cb);
   }
 
   // -------------------------------------------------------------------------
@@ -165,6 +186,9 @@ export class AudioMixer {
         source.connect(analyser);
         analyser.connect(gain);
         gain.connect(ctx.destination);
+        ctx.addEventListener("statechange", () => {
+          if (ctx.state === "running") for (const cb of this.audioStartListeners) cb();
+        });
         this.ctx = ctx;
         this.analyser = analyser;
         this.voiceGain = gain;
@@ -449,8 +473,8 @@ export class AudioMixer {
     return buffer;
   }
 
-  /** Decode an upcoming track ahead of its cue (the preloader's lookahead); before the first user
-   * gesture there's no AudioContext yet, so only the HTTP cache is warmed. */
+  /** Decode an upcoming track ahead of its cue (the preloader's lookahead); without an
+   * AudioContext (no Web Audio) only the HTTP cache is warmed. */
   public prefetchBgm(url: string): Promise<void> {
     if (this.ctx) return this.decodeBgm(this.ctx, url).then(() => {});
     return fetch(url, { cache: "force-cache" })
@@ -459,8 +483,8 @@ export class AudioMixer {
       .catch(() => {});
   }
 
-  /** Decode the current track and start its loop (once there's an AudioContext, i.e. after the
-   * first user gesture; ensureContext calls back here). */
+  /** Decode the current track and start its loop (on a suspended context it starts sounding when
+   * the context resumes, on the first user gesture). */
   private attachBgm(token: number) {
     const url = this.currentBgmUrl;
     const ctx = this.ctx;
