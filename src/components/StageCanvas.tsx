@@ -23,6 +23,11 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
  * S_z·R·S_x = Ry(180 - ry)·Rx(rx)·Rz(-rz), i.e. Euler (rx, 180 - ry, -rz) in YXZ order. For a pure
  * yaw this is the familiar 180 - ry; rotation.y stays the yaw (storyLookAt reads it).
  */
+/** The game's StoryCamera prefab: vertical field of view 10 (only [カメラズーム] changes it). */
+const STORY_CAMERA_FOV = 10;
+/** A standard background sprite, 1940x1100 at 100 pixels per unit, for scenarios without sizes. */
+const STANDARD_BG_SIZE: [number, number] = [19.4, 11.0];
+
 function setUnityEuler(obj: THREE.Object3D, r: number[]) {
   const d = THREE.MathUtils.degToRad;
   obj.rotation.set(d(r[0]), d(180 - r[1]), d(-r[2]), "YXZ");
@@ -626,6 +631,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const camToQuatRef = useRef(new THREE.Quaternion());
   const camAnimStartRef = useRef(0);
   const camAnimDurRef = useRef(0);
+  // [カメラズーム] field-of-view tween (CameraZoomCommand.DoZoom -> Camera.DOFieldOfView)
+  const camFovRef = useRef({ from: STORY_CAMERA_FOV, to: STORY_CAMERA_FOV, start: 0, dur: 0 });
 
   const bgFromPosRef = useRef(new THREE.Vector3(0, 0, -50));
   const bgToPosRef = useRef(new THREE.Vector3(0, 0, -50));
@@ -649,11 +656,12 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     charactersRef.current.clear();
     propsRef.current.clear();
 
-    // Clip planes from the game's StoryCamera prefab (resources.assets): near 0.3, far 1000. The
+    // Field of view and clip planes from the game's StoryCamera prefab (resources.assets): fov 10,
+    // near 0.3, far 1000 ([カメラズーム] tweens the fov, applyCameraFov). The
     // near plane matters: some shots put the camera inside a character's head (104-ep7-part1
     // line 34 sits in Kosuzu's), which the game clips away.
     const camera = new THREE.PerspectiveCamera(
-      10.5,
+      STORY_CAMERA_FOV,
       container.clientWidth / Math.max(1, container.clientHeight),
       0.3,
       1000
@@ -691,8 +699,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     scene.add(dirLight);
     dirLightRef.current = dirLight;
 
-    // 2D-in-3D Background Quad (Unity 1920x1080 @ 100 PPU = 19.2m x 10.8m)
-    const bgGeo = new THREE.PlaneGeometry(19.2, 10.8);
+    // 2D-in-3D background: the game's SpriteRenderer (StoryModelSpace.SetBackgroundSprite), a unit
+    // quad scaled to the sprite's size (pixels / pixels-per-unit) times the command's scale
+    const bgGeo = new THREE.PlaneGeometry(1, 1);
     const bgMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       side: THREE.DoubleSide,
@@ -716,6 +725,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       stageNowSecRef.current += dt;
       const now = stageNowSecRef.current;
       setToonTime(now);
+
+      // [カメラズーム] field-of-view tween
+      const fovTween = camFovRef.current;
+      if (camera.fov !== fovTween.to) {
+        const k = fovTween.dur <= 0.001 ? 1 : Math.min(1, (now - fovTween.start) / fovTween.dur);
+        camera.fov = k >= 1 ? fovTween.to : fovTween.from + (fovTween.to - fovTween.from) * k;
+        camera.updateProjectionMatrix();
+      }
 
       // Update camera interpolation in ADV mode
       if (cameraModeRef.current === "adv") {
@@ -986,6 +1003,17 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
   };
 
+  // Set the story camera's field of view, at once or over `durationSec` ([カメラズーム])
+  const applyCameraFov = (fov: number, durationSec: number) => {
+    const camera = cameraRef.current;
+    if (!camera) return;
+    camFovRef.current = { from: camera.fov, to: fov, start: stageNowSecRef.current, dur: durationSec };
+    if (durationSec <= 0.001 && camera.fov !== fov) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  };
+
   // Show or clear the fade overlay (暗転 = black, ブラックアウト, 円 wipes drawn as plain fades).
   const applyFade = (fade: StageSnapshot["fade"] | undefined, durationSec: number) => {
     const el = fadeRef.current;
@@ -1019,7 +1047,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     pos: [number, number, number],
     scale: [number, number],
     rot: [number, number, number],
-    durationSec = 0
+    durationSec = 0,
+    size: [number, number] = STANDARD_BG_SIZE
   ) => {
     if (!bgMeshRef.current || !bgMatRef.current) return;
     if (bgUrl !== currentBgUrlRef.current || (bgUrl && !bgMatRef.current.map)) {
@@ -1043,7 +1072,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     if (durationSec <= 0.001) {
       bgMeshRef.current.position.copy(bgToPosRef.current);
     }
-    bgMeshRef.current.scale.set(scale[0] || 1, scale[1] || 1, 1);
+    bgMeshRef.current.scale.set(size[0] * (scale[0] || 1), size[1] * (scale[1] || 1), 1);
     bgMeshRef.current.rotation.set(
       THREE.MathUtils.degToRad(rot[0]),
       THREE.MathUtils.degToRad(-rot[1]),
@@ -1385,8 +1414,10 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       snap.background.position,
       snap.background.scale,
       snap.background.rotation,
-      0
+      0,
+      snap.background.size
     );
+    applyCameraFov(snap.camera.fov ?? STORY_CAMERA_FOV, 0);
 
     // 2. Camera & Fade
     let initialCamDur = 0;
@@ -1553,6 +1584,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
             }
           }
           break;
+        case "camera_zoom":
+          applyCameraFov(Number(ev.fov) || STORY_CAMERA_FOV, Number(ev.duration || 0));
+          break;
         case "camera_move":
         case "camera_rotate":
           if (ev.camera)
@@ -1568,7 +1602,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
               bg.position,
               bg.scale,
               bg.rotation,
-              Number(ev.duration || 0)
+              Number(ev.duration || 0),
+              bg.size
             );
           }
           break;

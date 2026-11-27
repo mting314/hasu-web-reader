@@ -165,6 +165,8 @@ export interface BackgroundState {
   position: [number, number, number];
   scale: [number, number];
   rotation: [number, number, number];
+  /** sprite size in metres at scale 1 (pixels / pixels-per-unit); absent in older builds */
+  size?: [number, number];
 }
 
 export interface CameraState {
