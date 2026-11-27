@@ -86,6 +86,21 @@ export const CreditsPanel: React.FC<CreditsPanelProps> = ({ translationSources, 
                               <LinkOut href={s.url}>this episode</LinkOut>
                             </span>
                           )}
+                          {s.credits && s.credits.length > 0 && (
+                            <ul className="mt-1 space-y-0.5 pl-3">
+                              {s.credits.map((c) => (
+                                <li key={c.role}>
+                                  <span className="text-slate-300">{c.role}:</span>{" "}
+                                  {c.people.map((p, i) => (
+                                    <React.Fragment key={p.url ?? p.name}>
+                                      {i > 0 && ", "}
+                                      {p.url ? <LinkOut href={p.url}>{p.name}</LinkOut> : p.name}
+                                    </React.Fragment>
+                                  ))}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </li>
                       ))}
                   </ul>

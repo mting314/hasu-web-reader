@@ -29,6 +29,7 @@ PUBLIC_DATA_DIR = PUBLIC_DIR / "data"
 HASU_DUB_DIR = Path("/Users/michaelting/github/hasu-dub")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import idolst_en  # noqa: E402
 import jp_lexer  # noqa: E402
 
 JMDICT_RELEASE_URL = (
@@ -360,6 +361,28 @@ def hamproductions_prop_complete(pinfo: dict[str, Any]) -> bool:
     return all(asset_in_store(f"3d/{f}") for f in files)
 
 
+# The story camera (resources.assets StoryCamera prefab): vertical field of view 10.
+STORY_CAMERA_FOV = 10.0
+# A background is a SpriteRenderer (StoryModelSpace.SetBackgroundSprite): its size is the sprite's
+# pixels / pixels-per-unit (scripts/export_backgrounds.py records both); most are 1940x1100 @ 100.
+BACKGROUND_SIZES_PATH = DATA_CACHE_DIR / "background_sizes.json"
+BACKGROUND_SIZES: dict[str, list[float]] = (
+    json.loads(BACKGROUND_SIZES_PATH.read_text(encoding="utf-8")) if BACKGROUND_SIZES_PATH.exists() else {}
+)
+STANDARD_BG_SIZE = (19.4, 11.0)
+
+
+def background_size(bg_id: str, script_id: str) -> list[float]:
+    """World size [w, h] in metres of a background sprite at scale 1."""
+    if bg_id in BACKGROUND_SIZES:
+        w, h, ppu = BACKGROUND_SIZES[bg_id]
+        return [round(w / ppu, 4), round(h / ppu, 4)]
+    if bg_id != "story_bg_image_000":
+        print(f"[WARN] {script_id}: no size for {bg_id} in {BACKGROUND_SIZES_PATH.name} "
+              "(export_backgrounds.py records it); using the standard 19.4 x 11.0 m")
+    return list(STANDARD_BG_SIZE)
+
+
 def asset_available(rel_path: str) -> bool:
     local_file = PUBLIC_ASSETS_DIR / rel_path
     return local_file.exists() and local_file.stat().st_size > 0
@@ -408,11 +431,13 @@ def compile_script(
             "position": [0.0, 0.0, 50.0],
             "scale": [1.0, 1.0],
             "rotation": [0.0, 0.0, 0.0],
+            "size": list(STANDARD_BG_SIZE),
         },
         "camera": {
             "position": [0.0, 0.0, -10.0],
             "rotation": [0.0, 0.0, 0.0],
-            "fov": 25.0,
+            # the StoryCamera prefab's field of view; only [カメラズーム] changes it
+            "fov": STORY_CAMERA_FOV,
             "duration": 0.0,
             "easing": 0,
         },
@@ -483,6 +508,7 @@ def compile_script(
         return copy.deepcopy({
             "camera.position": s["camera"]["position"],
             "camera.rotation": s["camera"]["rotation"],
+            "camera.fov": s["camera"]["fov"],
             "background.position": s["background"]["position"],
             "fade": s["fade"],
             **{f"characters.{n}.position": c["position"] for n, c in s["characters"].items()},
@@ -494,6 +520,8 @@ def compile_script(
             return "camera.position"
         if t == "camera_rotate":
             return "camera.rotation"
+        if t == "camera_zoom":
+            return "camera.fov"
         if t == "bg_move":
             return "background.position"
         if t == "fade":
@@ -942,11 +970,13 @@ def compile_script(
             bg_url = None if bg_id == "story_bg_image_000" else asset_url(f"story/backgrounds/{bg_id}.webp", script_id)
             state["background"]["bgId"] = bg_id
             state["background"]["url"] = bg_url
+            size = background_size(bg_id, script_id)
             state["background"]["position"] = pos
             state["background"]["scale"] = scale
+            state["background"]["size"] = size
             if comment:
                 state["background"]["comment"] = comment
-            attach_event({"type": "bg_show", "bgId": bg_id, "url": bg_url, "position": pos, "scale": scale, "comment": comment})
+            attach_event({"type": "bg_show", "bgId": bg_id, "url": bg_url, "position": pos, "scale": scale, "size": size, "comment": comment})
             continue
 
         if cmd == "背景移動" and args:
@@ -960,6 +990,22 @@ def compile_script(
             rot = parse_vec(args[0], [0.0, 0.0, 0.0])
             state["background"]["rotation"] = rot
             attach_event({"type": "bg_rotate", "rotation": rot})
+            continue
+
+        # Camera zoom: [カメラズーム fov [sec [ease]]] tweens the story camera's field of view
+        # (CameraZoomCommand.DoZoom, RVA 0x41308DC: Camera.DOFieldOfView). TweenEase
+        # (RVA 0x413065C) maps argument 2: 1 -> Linear, 0 / missing -> OutQuad, else Unset
+        # (DOTween's default, OutQuad).
+        number = r"^(\d+(\.\d*)?|\.\d+)$"
+        if cmd == "カメラズーム" and args:
+            if not re.match(number, args[0]) or (len(args) >= 2 and not re.match(number, args[1])):
+                print(f"[WARN] {script_id}:{line_num} {cmd}: not a number in {args!r}, skipped")
+                continue
+            fov = float(args[0])
+            dur = float(args[1]) if len(args) >= 2 else 0.0
+            ease = "linear" if len(args) >= 3 and re.match(number, args[2]) and int(float(args[2])) == 1 else "outQuad"
+            state["camera"]["fov"] = fov
+            attach_event({"type": "camera_zoom", "fov": fov, "duration": dur, "ease": ease})
             continue
 
         # 4. Camera Movement & Rotation: [カメラ移動 0.00,4.96,-10.00 12.35 1]
@@ -1219,10 +1265,11 @@ def compile_script(
                 offset_sec += t_k["durationSec"]
         i = j
 
-    # All current translations come from the fan project "Hasunosora Activity Record
-    # Translation" (hasu-ko.vercel.app). The site does not name individual translators, so
-    # the project itself is credited. The hasu-dub script is that same English translation
-    # (132/138 lines identical in 10300101) with line breaks merged and light edits for dubbing.
+    # Most translations come from the fan project "Hasunosora Activity Record Translation"
+    # (hasu-ko.vercel.app). The site does not name individual translators, so the project
+    # itself is credited. The hasu-dub script is that same English translation (132/138 lines
+    # identical in 10300101) with line breaks merged and light edits for dubbing. The 103rd
+    # term also has Idol Story's English translation (idol.st), credited per contributor.
     en_map = align_rows([t["speakerEn"] for t in turns], [r["speaker"] for r in en_hasuko])
     # the Korean page has Korean speaker names: reuse the English pairing when its rows match
     if len(ko_hasuko) == len(en_hasuko):
@@ -1237,6 +1284,15 @@ def compile_script(
     if en_hasuko and len(en_map) < len(turns):
         print(f"  [WARN] {script_id}: Hasu-KO {hasuko_id} has {len(en_hasuko)} rows for {len(turns)} lines; "
               f"{len(turns) - len(en_map)} line(s) left without its translation")
+    # aligned after Hasu-KO: its English text guides how Idol Story's merged/split lines are cut
+    idolst = idolst_en.fetch_or_load_idolst(script_id, DATA_CACHE_DIR, STORY_INDEX_PATH)
+    if idolst:
+        idolst_map = idolst_en.align_idolst_turns(turns, idolst["rows"])
+        for i, row in idolst_map.items():
+            turns[i]["translations"]["en_idolst"] = row
+        if len(idolst_map) < len(turns):
+            print(f"  [WARN] {script_id}: Idol Story has {len(idolst['rows'])} rows for {len(turns)} lines; "
+                  f"{len(turns) - len(idolst_map)} line(s) left without its translation")
 
     hasuko_en_url = f"https://hasu-ko.vercel.app/en/story/{hasuko_id}"
     hasuko_ko_url = f"https://hasu-ko.vercel.app/story/{hasuko_id}"
@@ -1260,6 +1316,17 @@ def compile_script(
             "url": hasuko_en_url,
             "homepage": "https://hasu-ko.vercel.app/en/",
             "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records.",
+        })
+    if idolst:
+        translation_sources.append({
+            "id": "en_idolst",
+            "lang": "en",
+            "label": "English (Idol Story)",
+            "attribution": idolst["attribution"],
+            "url": idolst["url"],
+            "homepage": idolst["homepage"],
+            "note": idolst["note"],
+            "credits": idolst["credits"],
         })
     if ko_hasuko:
         translation_sources.append({

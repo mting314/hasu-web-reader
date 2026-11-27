@@ -10,6 +10,8 @@ export interface TranslationSource {
   homepage?: string;
   /** how the text was used or adapted */
   note?: string;
+  /** individual contributors by role, as the translator's page credits them */
+  credits?: { role: string; people: { name: string; url?: string }[] }[];
 }
 
 export interface ManifestCharacterAsset {
@@ -182,6 +184,8 @@ export interface BackgroundState {
   position: [number, number, number];
   scale: [number, number];
   rotation: [number, number, number];
+  /** sprite size in metres at scale 1 (pixels / pixels-per-unit); absent in older builds */
+  size?: [number, number];
 }
 
 export interface CameraState {
@@ -350,6 +354,7 @@ export type PrefetchMode = "off" | "next1" | "next5" | "all";
 
 export interface ReaderSettings {
   primaryTranslationId: string;
+  showSubtitles: boolean;
   showSecondaryLanguage: boolean;
   subtitleLayout: "side-by-side" | "stacked" | "primary-only";
   textSpeed: number; // 1..5 (5 = instant)

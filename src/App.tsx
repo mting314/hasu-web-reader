@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   BookOpen,
   Camera,
+  Captions,
+  CaptionsOff,
   ChevronLeft,
   ChevronRight,
   Columns,
@@ -44,6 +46,9 @@ function scriptIdFromUrl(): string | null {
   if (story) return scriptIdFromSlug(story);
   return params.get("script");
 }
+
+/** Translation shown until the reader picks one: Idol Story where it exists, else Hasu-KO. */
+const DEFAULT_TRANSLATION_ORDER = ["en_idolst", "en_hasuko"];
 import { AudioMixer } from "./AudioMixerSingleton";
 import {
   CatalogData,
@@ -138,7 +143,8 @@ export default function App() {
   const [bgmPlaying, setBgmPlaying] = useState(false);
 
   const [settings, setSettings] = useState<ReaderSettings>({
-    primaryTranslationId: "en_curated",
+    primaryTranslationId: DEFAULT_TRANSLATION_ORDER[0],
+    showSubtitles: true,
     showSecondaryLanguage: true,
     subtitleLayout: "side-by-side",
     textSpeed: 3,
@@ -153,6 +159,13 @@ export default function App() {
     removeRoundedCorners: false,
     showDebugInfo: false,
   });
+  // The translation the reader chose (kept across episodes); without one, the default order
+  // applies per episode, so a fallback on a part without Idol Story doesn't stick.
+  const pickedTranslationRef = useRef<string | null>(null);
+  const selectTranslation = (id: string) => {
+    pickedTranslationRef.current = id;
+    setSettings((s) => ({ ...s, primaryTranslationId: id }));
+  };
 
   // Typewriter text reveal state
   const [revealedChars, setRevealedChars] = useState(9999);
@@ -219,12 +232,13 @@ export default function App() {
         setScenario(data);
         setScenarioLoadingSlug(null);
         const availableIds = data.translationSources.map((s) => s.id);
-        setSettings((prev) => ({
-          ...prev,
-          primaryTranslationId: availableIds.includes(prev.primaryTranslationId)
-            ? prev.primaryTranslationId
-            : availableIds[0] || "en_hasuko",
-        }));
+        const picked = pickedTranslationRef.current;
+        const translationId =
+          (picked && availableIds.includes(picked) ? picked : undefined) ??
+          DEFAULT_TRANSLATION_ORDER.find((id) => availableIds.includes(id)) ??
+          availableIds[0] ??
+          DEFAULT_TRANSLATION_ORDER[0];
+        setSettings((prev) => ({ ...prev, primaryTranslationId: translationId }));
         const params = new URLSearchParams(window.location.search);
         const paramLine = parseInt(params.get("line") || "1", 10);
         if (scriptIdFromUrl() === data.scriptId && !Number.isNaN(paramLine)) {
@@ -422,6 +436,10 @@ export default function App() {
     }
   }, [scenario, currentTurnIndex, stageReady]);
 
+  const toggleSubtitles = useCallback(() => {
+    setSettings((s) => ({ ...s, showSubtitles: !s.showSubtitles }));
+  }, []);
+
   /**
    * Two-stage advance (clicking the stage canvas or pressing Space/ArrowRight):
    * Blocked while the current line's stage gate is pending (matching Cleista's navigation.js).
@@ -430,12 +448,12 @@ export default function App() {
    */
   const handleStageOrKeyAdvance = useCallback(() => {
     if (!stageReady || !firstTurnReady) return;
-    if (!isTypewriterDone) {
+    if (settings.showSubtitles && !isTypewriterDone) {
       setRevealedChars(9999);
       return;
     }
     handleNext();
-  }, [isTypewriterDone, handleNext, stageReady, firstTurnReady]);
+  }, [isTypewriterDone, handleNext, stageReady, firstTurnReady, settings.showSubtitles]);
 
   const handlePrev = useCallback(() => {
     if (currentTurnIndex > 0) {
@@ -647,16 +665,27 @@ export default function App() {
     if (delta) list.scrollTo({ top: list.scrollTop + delta, behavior: "smooth" });
   }, [currentTurnIndex]);
 
-  // Keyboard navigation (Right/Space = two-stage advance, Left = Prev)
+  // Keyboard navigation (Right/Space = two-stage advance, Left = Prev, C = toggle subtitles)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (sidebarOpen || creditsOpen) return; // an overlay (story selector, credits) has the keys
-      if (
-        document.activeElement?.tagName === "INPUT" ||
-        document.activeElement?.tagName === "SELECT"
-      ) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const activeEl = document.activeElement as HTMLElement | null;
+      const tag = activeEl?.tagName;
+      const inputType = tag === "INPUT" ? (activeEl as HTMLInputElement).type : "";
+      const isTextEntry =
+        tag === "SELECT" ||
+        tag === "TEXTAREA" ||
+        Boolean(activeEl?.isContentEditable) ||
+        (tag === "INPUT" && inputType !== "range" && inputType !== "checkbox");
+      if (isTextEntry) return;
+
+      if (e.key === "c" || e.key === "C") {
+        e.preventDefault();
+        toggleSubtitles();
         return;
       }
+      if (tag === "INPUT") return; // let focused range sliders & checkboxes handle Arrow/Space natively
       if (e.key === "ArrowRight" || e.key === " ") {
         e.preventDefault();
         handleStageOrKeyAdvance();
@@ -667,7 +696,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleStageOrKeyAdvance, handlePrev, sidebarOpen, creditsOpen]);
+  }, [handleStageOrKeyAdvance, handlePrev, toggleSubtitles, sidebarOpen, creditsOpen]);
 
   // The story selector covers the reader: auto mode pauses while it's open and resumes after.
   const pausedBySelectorRef = useRef(false);
@@ -1049,9 +1078,7 @@ export default function App() {
                     <select
                       aria-label="Translation source"
                       value={settings.primaryTranslationId}
-                      onChange={(e) =>
-                        setSettings((s) => ({ ...s, primaryTranslationId: e.target.value }))
-                      }
+                      onChange={(e) => selectTranslation(e.target.value)}
                       className="w-full rounded-lg border border-slate-700 bg-[#0b1018] px-2.5 py-1.5 text-slate-100"
                     >
                       {scenario.translationSources.map((src) => (
@@ -1329,7 +1356,7 @@ export default function App() {
                   <ArrowLeft className="w-4 h-4 stroke-[2.2]" />
                 </button>
 
-                {/* Top-Right White Floating Controls: Camera Mode, Autoplay, Reader Settings, Fullscreen */}
+                {/* Top-Right White Floating Controls: Camera Mode, Subtitles, Autoplay, Reader Settings, Fullscreen */}
                 <div className="pointer-events-auto flex items-center gap-2">
                   <button
                     type="button"
@@ -1351,6 +1378,32 @@ export default function App() {
                     <span className="hidden sm:inline">
                       {settings.cameraMode === "adv" ? "ADV Cam" : "3D Orbit"}
                     </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-label="Subtitles"
+                    aria-pressed={settings.showSubtitles}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSubtitles();
+                    }}
+                    className={`h-9 w-9 rounded-full shadow-lg flex items-center justify-center transition ${
+                      settings.showSubtitles
+                        ? "bg-white/95 hover:bg-white text-slate-900"
+                        : "bg-amber-400 text-slate-950"
+                    }`}
+                    title={
+                      settings.showSubtitles
+                        ? "Hide subtitles for clean screenshots (C)"
+                        : "Show subtitles (C)"
+                    }
+                  >
+                    {settings.showSubtitles ? (
+                      <Captions className="w-4 h-4" />
+                    ) : (
+                      <CaptionsOff className="w-4 h-4" />
+                    )}
                   </button>
 
                   <button
@@ -1502,12 +1555,7 @@ export default function App() {
                       <select
                         aria-label="Translation source:"
                         value={settings.primaryTranslationId}
-                        onChange={(e) =>
-                          setSettings((s) => ({
-                            ...s,
-                            primaryTranslationId: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => selectTranslation(e.target.value)}
                         className="rounded-lg border border-white/20 bg-slate-900/90 px-2 py-1 text-slate-100"
                       >
                         {scenario.translationSources.map((src) => (
@@ -1520,6 +1568,18 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.showSubtitles}
+                        onChange={(e) =>
+                          setSettings((s) => ({ ...s, showSubtitles: e.target.checked }))
+                        }
+                        className="accent-[#58a6ff] h-4 w-4 rounded"
+                      />
+                      <span>Show subtitles</span>
+                    </label>
+
                     <label className="inline-flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1609,50 +1669,30 @@ export default function App() {
               )}
 
               {/* Frameless Text-Stroke Bilingual Subtitle Overlay on Stage (exact pjsk.cleista.cc container-query scaling) */}
-              <div
-                onClick={handleStageOrKeyAdvance}
-                style={{
-                  visibility:
-                    !firstTurnReady || (!stageReady && lastTurnNavKindRef.current === "seek")
-                      ? "hidden"
-                      : "visible",
-                }}
-                className="cleista-dialogue-overlay z-20 bg-gradient-to-t from-slate-950/75 via-slate-950/35 to-transparent cursor-pointer"
-              >
+              {settings.showSubtitles && (
                 <div
-                  className={`cleista-dialogue-grid ${
-                    showDualCanvasSubtitles && settings.subtitleLayout === "side-by-side"
-                      ? "is-dual"
-                      : ""
-                  }`}
+                  onClick={handleStageOrKeyAdvance}
+                  style={{
+                    visibility:
+                      !firstTurnReady || (!stageReady && lastTurnNavKindRef.current === "seek")
+                        ? "hidden"
+                        : "visible",
+                  }}
+                  className="cleista-dialogue-overlay z-20 bg-gradient-to-t from-slate-950/75 via-slate-950/35 to-transparent cursor-pointer"
                 >
-                  {/* Left: Primary Language (Translation) with Speaker Underline Accent */}
-                  <div>
-                    {(activeTranslation.speaker || currentTurn.speakerEn) && (
-                      <div>
-                        <span className="cleista-speaker-text inline-block font-bold text-white cleista-speaker-stroke">
-                          {activeTranslation.speaker || currentTurn.speakerEn}
-                        </span>
-                        <div
-                          className="cleista-speaker-underline shadow-sm"
-                          style={{
-                            backgroundColor: currentTurn.characterColor || "#94a3b8",
-                          }}
-                        />
-                      </div>
-                    )}
-                    <p className="cleista-line-text font-semibold text-white whitespace-pre-wrap cleista-stroke">
-                      {activeTranslation.text.slice(0, revealedChars)}
-                    </p>
-                  </div>
-
-                  {/* Right: Second Language (Japanese) with Ruby Furigana & Interactive Word Lookup */}
-                  {showDualCanvasSubtitles && (
-                    <div className="font-jp">
-                      {currentTurn.speakerJp && (
+                  <div
+                    className={`cleista-dialogue-grid ${
+                      showDualCanvasSubtitles && settings.subtitleLayout === "side-by-side"
+                        ? "is-dual"
+                        : ""
+                    }`}
+                  >
+                    {/* Left: Primary Language (Translation) with Speaker Underline Accent */}
+                    <div>
+                      {(activeTranslation.speaker || currentTurn.speakerEn) && (
                         <div>
                           <span className="cleista-speaker-text inline-block font-bold text-white cleista-speaker-stroke">
-                            {currentTurn.speakerJp}
+                            {activeTranslation.speaker || currentTurn.speakerEn}
                           </span>
                           <div
                             className="cleista-speaker-underline shadow-sm"
@@ -1662,19 +1702,41 @@ export default function App() {
                           />
                         </div>
                       )}
-                      <JapaneseLookupText
-                        tokens={currentTurn.tokensJp}
-                        text={currentTurn.textJp}
-                        lexicon={scenario.lexicon ?? {}}
-                        tags={scenario.lexTags ?? {}}
-                        showFurigana={settings.showFurigana}
-                        maxChars={revealedChars}
-                        className="cleista-line-text block font-semibold text-white cleista-stroke"
-                      />
+                      <p className="cleista-line-text font-semibold text-white whitespace-pre-wrap cleista-stroke">
+                        {activeTranslation.text.slice(0, revealedChars)}
+                      </p>
                     </div>
-                  )}
+
+                    {/* Right: Second Language (Japanese) with Ruby Furigana & Interactive Word Lookup */}
+                    {showDualCanvasSubtitles && (
+                      <div className="font-jp">
+                        {currentTurn.speakerJp && (
+                          <div>
+                            <span className="cleista-speaker-text inline-block font-bold text-white cleista-speaker-stroke">
+                              {currentTurn.speakerJp}
+                            </span>
+                            <div
+                              className="cleista-speaker-underline shadow-sm"
+                              style={{
+                                backgroundColor: currentTurn.characterColor || "#94a3b8",
+                              }}
+                            />
+                          </div>
+                        )}
+                        <JapaneseLookupText
+                          tokens={currentTurn.tokensJp}
+                          text={currentTurn.textJp}
+                          lexicon={scenario.lexicon ?? {}}
+                          tags={scenario.lexTags ?? {}}
+                          showFurigana={settings.showFurigana}
+                          maxChars={revealedChars}
+                          className="cleista-line-text block font-semibold text-white cleista-stroke"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* 2. Cleista Middle Transport Bar */}
@@ -1728,6 +1790,30 @@ export default function App() {
                   title="Replay current character voice line"
                 >
                   <RotateCcw className="w-3.5 h-3.5" /> Voice
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="Subtitles"
+                  aria-pressed={settings.showSubtitles}
+                  onClick={toggleSubtitles}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs sm:text-sm font-semibold transition ${
+                    settings.showSubtitles
+                      ? "border-slate-700/80 bg-[#0f1724] hover:bg-[#172234] text-slate-200"
+                      : "border-amber-400/60 bg-amber-400/15 text-amber-200"
+                  }`}
+                  title={
+                    settings.showSubtitles
+                      ? "Hide stage subtitles for clean screenshots (C)"
+                      : "Show stage subtitles (C)"
+                  }
+                >
+                  {settings.showSubtitles ? (
+                    <Captions className="w-3.5 h-3.5" />
+                  ) : (
+                    <CaptionsOff className="w-3.5 h-3.5" />
+                  )}
+                  Subtitles
                 </button>
               </div>
 
@@ -1828,12 +1914,7 @@ export default function App() {
                     <select
                       aria-label="Translation source:"
                       value={settings.primaryTranslationId}
-                      onChange={(e) =>
-                        setSettings((s) => ({
-                          ...s,
-                          primaryTranslationId: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => selectTranslation(e.target.value)}
                       className="rounded-lg border border-slate-700/80 bg-[#111b2a] px-2.5 py-1.5 text-slate-100 font-medium"
                     >
                       {scenario.translationSources.map((src) => (
@@ -1845,8 +1926,20 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Row 2: Furigana, Hide Primary Language, Prefetch, 3D Characters & Resolution */}
+                {/* Row 2: Subtitles, Furigana, Hide Primary Language, Prefetch, 3D Characters & Resolution */}
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.showSubtitles}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, showSubtitles: e.target.checked }))
+                      }
+                      className="accent-[#58a6ff] h-4 w-4 rounded"
+                    />
+                    <span>Show subtitles on stage</span>
+                  </label>
+
                   <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
