@@ -46,6 +46,9 @@ function scriptIdFromUrl(): string | null {
   if (story) return scriptIdFromSlug(story);
   return params.get("script");
 }
+
+/** Translation shown until the reader picks one: Idol Story where it exists, else Hasu-KO. */
+const DEFAULT_TRANSLATION_ORDER = ["en_idolst", "en_hasuko"];
 import { AudioMixer } from "./AudioMixerSingleton";
 import {
   CatalogData,
@@ -140,7 +143,7 @@ export default function App() {
   const [bgmPlaying, setBgmPlaying] = useState(false);
 
   const [settings, setSettings] = useState<ReaderSettings>({
-    primaryTranslationId: "en_curated",
+    primaryTranslationId: DEFAULT_TRANSLATION_ORDER[0],
     showSubtitles: true,
     showSecondaryLanguage: true,
     subtitleLayout: "side-by-side",
@@ -156,6 +159,13 @@ export default function App() {
     removeRoundedCorners: false,
     showDebugInfo: false,
   });
+  // The translation the reader chose (kept across episodes); without one, the default order
+  // applies per episode, so a fallback on a part without Idol Story doesn't stick.
+  const pickedTranslationRef = useRef<string | null>(null);
+  const selectTranslation = (id: string) => {
+    pickedTranslationRef.current = id;
+    setSettings((s) => ({ ...s, primaryTranslationId: id }));
+  };
 
   // Typewriter text reveal state
   const [revealedChars, setRevealedChars] = useState(9999);
@@ -222,12 +232,13 @@ export default function App() {
         setScenario(data);
         setScenarioLoadingSlug(null);
         const availableIds = data.translationSources.map((s) => s.id);
-        setSettings((prev) => ({
-          ...prev,
-          primaryTranslationId: availableIds.includes(prev.primaryTranslationId)
-            ? prev.primaryTranslationId
-            : availableIds[0] || "en_hasuko",
-        }));
+        const picked = pickedTranslationRef.current;
+        const translationId =
+          (picked && availableIds.includes(picked) ? picked : undefined) ??
+          DEFAULT_TRANSLATION_ORDER.find((id) => availableIds.includes(id)) ??
+          availableIds[0] ??
+          DEFAULT_TRANSLATION_ORDER[0];
+        setSettings((prev) => ({ ...prev, primaryTranslationId: translationId }));
         const params = new URLSearchParams(window.location.search);
         const paramLine = parseInt(params.get("line") || "1", 10);
         if (scriptIdFromUrl() === data.scriptId && !Number.isNaN(paramLine)) {
@@ -1067,9 +1078,7 @@ export default function App() {
                     <select
                       aria-label="Translation source"
                       value={settings.primaryTranslationId}
-                      onChange={(e) =>
-                        setSettings((s) => ({ ...s, primaryTranslationId: e.target.value }))
-                      }
+                      onChange={(e) => selectTranslation(e.target.value)}
                       className="w-full rounded-lg border border-slate-700 bg-[#0b1018] px-2.5 py-1.5 text-slate-100"
                     >
                       {scenario.translationSources.map((src) => (
@@ -1546,12 +1555,7 @@ export default function App() {
                       <select
                         aria-label="Translation source:"
                         value={settings.primaryTranslationId}
-                        onChange={(e) =>
-                          setSettings((s) => ({
-                            ...s,
-                            primaryTranslationId: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => selectTranslation(e.target.value)}
                         className="rounded-lg border border-white/20 bg-slate-900/90 px-2 py-1 text-slate-100"
                       >
                         {scenario.translationSources.map((src) => (
@@ -1910,12 +1914,7 @@ export default function App() {
                     <select
                       aria-label="Translation source:"
                       value={settings.primaryTranslationId}
-                      onChange={(e) =>
-                        setSettings((s) => ({
-                          ...s,
-                          primaryTranslationId: e.target.value,
-                        }))
-                      }
+                      onChange={(e) => selectTranslation(e.target.value)}
                       className="rounded-lg border border-slate-700/80 bg-[#111b2a] px-2.5 py-1.5 text-slate-100 font-medium"
                     >
                       {scenario.translationSources.map((src) => (
