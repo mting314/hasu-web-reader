@@ -114,12 +114,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 8,
-        "props": 6,
+        "props": 7,
         "motions": 93,
         "bgm": 5,
         "se": 9,
         "voices": 107,
-        "total": 232
+        "total": 233
       },
       "castCharacters": [
         {
@@ -202,12 +202,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 5,
-        "props": 4,
+        "props": 5,
         "motions": 90,
         "bgm": 3,
         "se": 6,
         "voices": 101,
-        "total": 214
+        "total": 215
       },
       "castCharacters": [
         {
@@ -300,12 +300,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 6,
-        "props": 1,
+        "props": 3,
         "motions": 80,
         "bgm": 3,
         "se": 6,
         "voices": 93,
-        "total": 194
+        "total": 196
       },
       "castCharacters": [
         {
@@ -604,12 +604,12 @@
       "assetCounts": {
         "characters": 6,
         "backgrounds": 4,
-        "props": 1,
+        "props": 3,
         "motions": 72,
         "bgm": 3,
         "se": 3,
         "voices": 92,
-        "total": 181
+        "total": 183
       },
       "castCharacters": [
         {
@@ -693,12 +693,12 @@
       "assetCounts": {
         "characters": 2,
         "backgrounds": 2,
-        "props": 0,
+        "props": 1,
         "motions": 40,
         "bgm": 1,
         "se": 1,
         "voices": 20,
-        "total": 66
+        "total": 67
       },
       "castCharacters": [
         {
@@ -849,12 +849,12 @@
       "assetCounts": {
         "characters": 6,
         "backgrounds": 5,
-        "props": 1,
+        "props": 4,
         "motions": 105,
         "bgm": 3,
         "se": 3,
         "voices": 96,
-        "total": 219
+        "total": 222
       },
       "castCharacters": [
         {
@@ -1025,12 +1025,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 4,
-        "props": 3,
+        "props": 6,
         "motions": 53,
         "bgm": 1,
         "se": 7,
         "voices": 89,
-        "total": 161
+        "total": 164
       },
       "castCharacters": [
         {
@@ -1113,12 +1113,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 3,
-        "props": 1,
+        "props": 2,
         "motions": 51,
         "bgm": 3,
         "se": 4,
         "voices": 104,
-        "total": 174
+        "total": 175
       },
       "castCharacters": [
         {
@@ -1241,12 +1241,12 @@
       "assetCounts": {
         "characters": 7,
         "backgrounds": 2,
-        "props": 6,
+        "props": 8,
         "motions": 106,
         "bgm": 2,
         "se": 9,
         "voices": 89,
-        "total": 221
+        "total": 223
       },
       "castCharacters": [
         {
@@ -1359,12 +1359,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 5,
-        "props": 9,
+        "props": 11,
         "motions": 121,
         "bgm": 3,
         "se": 5,
         "voices": 89,
-        "total": 242
+        "total": 244
       },
       "castCharacters": [
         {
@@ -1507,12 +1507,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 5,
-        "props": 4,
+        "props": 5,
         "motions": 97,
         "bgm": 3,
         "se": 7,
         "voices": 90,
-        "total": 210
+        "total": 211
       },
       "castCharacters": [
         {
@@ -1673,12 +1673,12 @@
       "assetCounts": {
         "characters": 9,
         "backgrounds": 2,
-        "props": 2,
+        "props": 3,
         "motions": 69,
         "bgm": 1,
         "se": 3,
         "voices": 64,
-        "total": 150
+        "total": 151
       },
       "castCharacters": [
         {
@@ -1899,12 +1899,12 @@
       "assetCounts": {
         "characters": 7,
         "backgrounds": 3,
-        "props": 5,
+        "props": 6,
         "motions": 52,
         "bgm": 2,
         "se": 5,
         "voices": 86,
-        "total": 160
+        "total": 161
       },
       "castCharacters": [
         {
@@ -2017,12 +2017,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 7,
-        "props": 3,
+        "props": 5,
         "motions": 45,
         "bgm": 2,
         "se": 2,
         "voices": 92,
-        "total": 156
+        "total": 158
       },
       "castCharacters": [
         {
@@ -2115,12 +2115,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 1,
-        "props": 0,
+        "props": 1,
         "motions": 37,
         "bgm": 1,
         "se": 2,
         "voices": 49,
-        "total": 94
+        "total": 95
       },
       "castCharacters": [
         {
@@ -2823,12 +2823,12 @@
       "assetCounts": {
         "characters": 7,
         "backgrounds": 3,
-        "props": 4,
+        "props": 8,
         "motions": 112,
         "bgm": 3,
         "se": 2,
         "voices": 85,
-        "total": 216
+        "total": 220
       },
       "castCharacters": [
         {
@@ -3107,12 +3107,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 6,
-        "props": 7,
+        "props": 8,
         "motions": 92,
         "bgm": 3,
         "se": 5,
         "voices": 69,
-        "total": 187
+        "total": 188
       },
       "castCharacters": [
         {
@@ -3205,12 +3205,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 2,
-        "props": 0,
+        "props": 1,
         "motions": 55,
         "bgm": 2,
         "se": 1,
         "voices": 50,
-        "total": 114
+        "total": 115
       },
       "castCharacters": [
         {
@@ -3293,12 +3293,12 @@
       "assetCounts": {
         "characters": 3,
         "backgrounds": 1,
-        "props": 1,
+        "props": 2,
         "motions": 60,
         "bgm": 2,
         "se": 6,
         "voices": 68,
-        "total": 141
+        "total": 142
       },
       "castCharacters": [
         {
@@ -3469,12 +3469,12 @@
       "assetCounts": {
         "characters": 11,
         "backgrounds": 7,
-        "props": 7,
+        "props": 16,
         "motions": 89,
         "bgm": 3,
         "se": 8,
         "voices": 131,
-        "total": 256
+        "total": 265
       },
       "castCharacters": [
         {
@@ -3627,12 +3627,12 @@
       "assetCounts": {
         "characters": 6,
         "backgrounds": 4,
-        "props": 9,
+        "props": 11,
         "motions": 111,
         "bgm": 2,
         "se": 8,
         "voices": 163,
-        "total": 303
+        "total": 305
       },
       "castCharacters": [
         {
@@ -4309,12 +4309,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 1,
-        "props": 0,
+        "props": 1,
         "motions": 97,
         "bgm": 2,
         "se": 1,
         "voices": 69,
-        "total": 174
+        "total": 175
       },
       "castCharacters": [
         {
@@ -4565,12 +4565,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 3,
-        "props": 3,
+        "props": 4,
         "motions": 89,
         "bgm": 3,
         "se": 3,
         "voices": 78,
-        "total": 189
+        "total": 190
       },
       "castCharacters": [
         {
@@ -4899,12 +4899,12 @@
       "assetCounts": {
         "characters": 26,
         "backgrounds": 5,
-        "props": 3,
+        "props": 4,
         "motions": 67,
         "bgm": 2,
         "se": 4,
         "voices": 64,
-        "total": 171
+        "total": 172
       },
       "castCharacters": [
         {
@@ -5295,12 +5295,12 @@
       "assetCounts": {
         "characters": 9,
         "backgrounds": 2,
-        "props": 0,
+        "props": 2,
         "motions": 58,
         "bgm": 1,
         "se": 1,
         "voices": 87,
-        "total": 158
+        "total": 160
       },
       "castCharacters": [
         {
@@ -5571,12 +5571,12 @@
       "assetCounts": {
         "characters": 2,
         "backgrounds": 1,
-        "props": 0,
+        "props": 1,
         "motions": 9,
         "bgm": 1,
         "se": 2,
         "voices": 13,
-        "total": 28
+        "total": 29
       },
       "castCharacters": [
         {
@@ -5885,12 +5885,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 4,
-        "props": 13,
+        "props": 16,
         "motions": 126,
         "bgm": 3,
         "se": 7,
         "voices": 114,
-        "total": 277
+        "total": 280
       },
       "castCharacters": [
         {
@@ -6101,12 +6101,12 @@
       "assetCounts": {
         "characters": 6,
         "backgrounds": 5,
-        "props": 6,
+        "props": 7,
         "motions": 47,
         "bgm": 1,
         "se": 10,
         "voices": 101,
-        "total": 176
+        "total": 177
       },
       "castCharacters": [
         {
@@ -6209,12 +6209,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 3,
-        "props": 7,
+        "props": 9,
         "motions": 63,
         "bgm": 2,
         "se": 4,
         "voices": 94,
-        "total": 183
+        "total": 185
       },
       "castCharacters": [
         {
@@ -6495,12 +6495,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 4,
-        "props": 2,
+        "props": 5,
         "motions": 95,
         "bgm": 3,
         "se": 5,
         "voices": 84,
-        "total": 203
+        "total": 206
       },
       "castCharacters": [
         {
@@ -6643,12 +6643,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 2,
-        "props": 3,
+        "props": 5,
         "motions": 106,
         "bgm": 3,
         "se": 5,
         "voices": 107,
-        "total": 231
+        "total": 233
       },
       "castCharacters": [
         {
@@ -6741,12 +6741,12 @@
       "assetCounts": {
         "characters": 12,
         "backgrounds": 3,
-        "props": 9,
+        "props": 10,
         "motions": 121,
         "bgm": 3,
         "se": 5,
         "voices": 122,
-        "total": 275
+        "total": 276
       },
       "castCharacters": [
         {
@@ -7027,12 +7027,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 3,
-        "props": 6,
+        "props": 9,
         "motions": 151,
         "bgm": 3,
         "se": 3,
         "voices": 114,
-        "total": 290
+        "total": 293
       },
       "castCharacters": [
         {
@@ -7175,12 +7175,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 4,
-        "props": 7,
+        "props": 11,
         "motions": 121,
         "bgm": 2,
         "se": 10,
         "voices": 84,
-        "total": 236
+        "total": 240
       },
       "castCharacters": [
         {
@@ -7303,12 +7303,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 1,
-        "props": 1,
+        "props": 3,
         "motions": 64,
         "bgm": 3,
         "se": 1,
         "voices": 132,
-        "total": 210
+        "total": 212
       },
       "castCharacters": [
         {
@@ -7559,12 +7559,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 8,
-        "props": 6,
+        "props": 8,
         "motions": 75,
         "bgm": 4,
         "se": 8,
         "voices": 134,
-        "total": 243
+        "total": 245
       },
       "castCharacters": [
         {
@@ -7795,12 +7795,12 @@
       "assetCounts": {
         "characters": 10,
         "backgrounds": 2,
-        "props": 2,
+        "props": 3,
         "motions": 100,
         "bgm": 3,
         "se": 2,
         "voices": 108,
-        "total": 227
+        "total": 228
       },
       "castCharacters": [
         {
@@ -7943,12 +7943,12 @@
       "assetCounts": {
         "characters": 7,
         "backgrounds": 3,
-        "props": 4,
+        "props": 7,
         "motions": 85,
         "bgm": 2,
         "se": 6,
         "voices": 92,
-        "total": 199
+        "total": 202
       },
       "castCharacters": [
         {
@@ -8415,12 +8415,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 2,
-        "props": 1,
+        "props": 2,
         "motions": 70,
         "bgm": 3,
         "se": 1,
         "voices": 104,
-        "total": 189
+        "total": 190
       },
       "castCharacters": [
         {
@@ -8791,12 +8791,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 2,
-        "props": 5,
+        "props": 6,
         "motions": 48,
         "bgm": 3,
         "se": 4,
         "voices": 96,
-        "total": 166
+        "total": 167
       },
       "castCharacters": [
         {
@@ -8987,12 +8987,12 @@
       "assetCounts": {
         "characters": 8,
         "backgrounds": 6,
-        "props": 4,
+        "props": 6,
         "motions": 83,
         "bgm": 5,
         "se": 4,
         "voices": 163,
-        "total": 273
+        "total": 275
       },
       "castCharacters": [
         {
@@ -9361,12 +9361,12 @@
       "assetCounts": {
         "characters": 11,
         "backgrounds": 1,
-        "props": 4,
+        "props": 5,
         "motions": 116,
         "bgm": 3,
         "se": 5,
         "voices": 142,
-        "total": 282
+        "total": 283
       },
       "castCharacters": [
         {
@@ -9519,12 +9519,12 @@
       "assetCounts": {
         "characters": 3,
         "backgrounds": 4,
-        "props": 0,
+        "props": 2,
         "motions": 81,
         "bgm": 3,
         "se": 3,
         "voices": 125,
-        "total": 219
+        "total": 221
       },
       "castCharacters": [
         {
@@ -9597,12 +9597,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 2,
-        "props": 2,
+        "props": 4,
         "motions": 85,
         "bgm": 3,
         "se": 2,
         "voices": 141,
-        "total": 239
+        "total": 241
       },
       "castCharacters": [
         {
@@ -9793,12 +9793,12 @@
       "assetCounts": {
         "characters": 5,
         "backgrounds": 1,
-        "props": 4,
+        "props": 5,
         "motions": 81,
         "bgm": 1,
         "se": 4,
         "voices": 85,
-        "total": 181
+        "total": 182
       },
       "castCharacters": [
         {
@@ -9891,12 +9891,12 @@
       "assetCounts": {
         "characters": 11,
         "backgrounds": 1,
-        "props": 12,
+        "props": 14,
         "motions": 63,
         "bgm": 2,
         "se": 4,
         "voices": 64,
-        "total": 157
+        "total": 159
       },
       "castCharacters": [
         {
@@ -10305,12 +10305,12 @@
       "assetCounts": {
         "characters": 11,
         "backgrounds": 4,
-        "props": 7,
+        "props": 8,
         "motions": 79,
         "bgm": 3,
         "se": 7,
         "voices": 94,
-        "total": 205
+        "total": 206
       },
       "castCharacters": [
         {
@@ -10551,12 +10551,12 @@
       "assetCounts": {
         "characters": 4,
         "backgrounds": 1,
-        "props": 12,
+        "props": 13,
         "motions": 59,
         "bgm": 3,
         "se": 5,
         "voices": 79,
-        "total": 163
+        "total": 164
       },
       "castCharacters": [
         {
@@ -10639,12 +10639,12 @@
       "assetCounts": {
         "characters": 7,
         "backgrounds": 1,
-        "props": 2,
+        "props": 3,
         "motions": 68,
         "bgm": 2,
         "se": 2,
         "voices": 72,
-        "total": 154
+        "total": 155
       },
       "castCharacters": [
         {

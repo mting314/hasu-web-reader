@@ -140,7 +140,26 @@ export interface CharacterState {
   /** transition seconds of the [キャラ表情変更] that set `emotion` (null = the data's TransitionTime) */
   emotionTransitionSec?: number | null;
   tears: boolean;
-  attachedProps: string[];
+  /** Hand props parented to the character's bones, by the command's key */
+  items?: Record<string, CharacterItemState>;
+}
+
+/** A prop held by a character ([キャラ小物直接表示] / [キャラ小物表示]): parented to a bone with
+ * SetParent(bone, false), then a Unity local position, euler angles and scale. */
+export interface CharacterItemState {
+  id: string;
+  key: string;
+  glbUrl: string;
+  extraGlbUrls: string[];
+  textureDir: string;
+  textureMap: Record<string, Record<string, string>>;
+  /** HumanBodyBones name (直接表示), e.g. "LeftHand" */
+  bone: string | null;
+  /** transform path under the costume root (表示: the ModelSocketData's TargetBone) */
+  socketPath: string | null;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
 }
 
 export interface PropState {

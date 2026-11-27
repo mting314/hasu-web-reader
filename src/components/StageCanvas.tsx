@@ -26,6 +26,7 @@ import {
 } from "../engine/storyMotion";
 import {
   AssetManifest,
+  CharacterItemState,
   CharacterState,
   DialogueTurn,
   IntraEvent,
@@ -82,12 +83,97 @@ interface LoadedCharacter extends MotionHost {
   motionClips: Map<string, Promise<THREE.AnimationClip[]>>;
   /** The game's FaceBonesCopier: puts the separate face rig on the animated body each frame */
   copyFaceBones: (() => void) | null;
+  /** Hand props on the model's bones, by key */
+  items: Map<string, { id: string; group: THREE.Group }>;
 }
 
 interface LoadedProp {
   alias: string;
   id: string;
   group: THREE.Group;
+}
+
+/** Where a prop's model is: set props (PropState) and hand props (CharacterItemState) alike. */
+type PropModel = Pick<PropState, "glbUrl" | "extraGlbUrls" | "textureDir" | "textureMap">;
+
+/**
+ * Unity's HumanBodyBones -> the bone's name after the rig's prefix (`KahDeA_` + `LHand`). The same
+ * for every story body Avatar (dumped from Kaho's, Kozue's, Rurino's and Hime's SCSch0NN<Chr>DeA
+ * Avatars); `ModelHandler.GetHumanBone` (RVA 0x4981C84) resolves the name through the Avatar.
+ */
+const HUMAN_BONE_SUFFIX: Record<string, string> = {
+  Hips: "Hips", Spine: "Spine_01", Chest: "Spine_02", UpperChest: "Spine_03", Neck: "Neck", Head: "Head",
+  LeftUpperLeg: "LUpLeg", LeftLowerLeg: "LLeg", LeftFoot: "LFoot", LeftToes: "LToeBase",
+  RightUpperLeg: "RUpLeg", RightLowerLeg: "RLeg", RightFoot: "RFoot", RightToes: "RToeBase",
+  LeftShoulder: "LShoulder", LeftUpperArm: "LArm", LeftLowerArm: "LForeArm", LeftHand: "LHand",
+  RightShoulder: "RShoulder", RightUpperArm: "RArm", RightLowerArm: "RForeArm", RightHand: "RHand",
+  LeftEye: "LEye", RightEye: "REye",
+  ...Object.fromEntries(
+    (["Left", "Right"] as const).flatMap((side) =>
+      (
+        [["Thumb", "Thumb"], ["Index", "Index"], ["Middle", "Middle"], ["Ring", "Ring"], ["Little", "Pinky"]] as const
+      ).flatMap(([finger, rigFinger]) =>
+        (["Proximal", "Intermediate", "Distal"] as const).map((phalanx, i) => [
+          `${side}${finger}${phalanx}`,
+          `${side[0]}Hand${rigFinger}_0${i + 1}`,
+        ])
+      )
+    )
+  ),
+};
+
+/** The body bone a hand prop hangs off: a HumanBodyBones name, or a ModelSocketData path from
+ * the costume root (`Transform.Find`, so another costume's path finds nothing). */
+function findItemParent(modelScene: THREE.Object3D, item: CharacterItemState): THREE.Object3D | null {
+  if (item.socketPath) {
+    let node: THREE.Object3D | undefined = modelScene.children.find((c) => c.name.startsWith("3d_costume_"));
+    for (const name of item.socketPath.split("/")) {
+      node = node?.children.find((c) => c.name === name);
+    }
+    return node ?? null;
+  }
+  const suffix = item.bone ? HUMAN_BONE_SUFFIX[item.bone] : undefined;
+  if (!suffix) return null;
+  // the body rig's `<Chr><Var>_Reference` (the face rig's bones have no variant prefix)
+  let reference: THREE.Object3D | null = null;
+  modelScene.traverse((n) => {
+    if (!reference && n.name.endsWith("_Reference")) reference = n;
+  });
+  if (!reference) return null;
+  const prefix = (reference as THREE.Object3D).name.slice(0, -"Reference".length);
+  return (reference as THREE.Object3D).getObjectByName(`${prefix}${suffix}`) ?? null;
+}
+
+/** SetParent(bone, false) + localPosition / localEulerAngles / localScale, in glTF's mirrored
+ * frame like the costume GLBs: position (-x, y, z), rotation (x, -y, -z, w). Quaternion.Euler
+ * applies z, then x, then y: three's "YXZ" order. */
+function setUnityLocalTransform(
+  obj: THREE.Object3D,
+  position: [number, number, number],
+  euler: [number, number, number],
+  scale: [number, number, number]
+): void {
+  const d = THREE.MathUtils.degToRad;
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(d(euler[0]), d(euler[1]), d(euler[2]), "YXZ"));
+  obj.position.set(-position[0], position[1], position[2]);
+  obj.quaternion.set(q.x, -q.y, -q.z, q.w);
+  obj.scale.set(scale[0], scale[1], scale[2]);
+}
+
+/** An unlit material for a prop exported from the raw data (`material.extras.unity`): its main
+ * texture times its colour, like Universal Render Pipeline/Unlit (most hand props). */
+async function gamePropMaterial(mat: THREE.Material, parser: any): Promise<THREE.Material> {
+  const unity = mat.userData?.unity;
+  let map = (mat as THREE.MeshBasicMaterial).map ?? null;
+  const base = unity?.textures?._BaseMap ?? unity?.textures?._MainTex;
+  if (!map && base) {
+    map = await parser.getDependency("texture", base.index).catch(() => null);
+    if (map) map.colorSpace = THREE.SRGBColorSpace;
+  }
+  const out = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide });
+  const color = unity?.colors?._BaseColor ?? unity?.colors?._Color;
+  if (color) out.color.setRGB(color[0], color[1], color[2], THREE.SRGBColorSpace);
+  return out;
 }
 
 const gltfCache = new Map<string, Promise<any>>();
@@ -354,7 +440,8 @@ export function startTieredEpisodePreloader(
             enqueue(`char:${entry.costumeId}`, "backbone", () => prewarmCharacterAsset(entry));
           }
         }
-        for (const p of Object.values(t.stateBefore.props)) {
+        const handProps = Object.values(t.stateBefore.characters).flatMap((c) => Object.values(c.items ?? {}));
+        for (const p of [...Object.values(t.stateBefore.props), ...handProps]) {
           const entry = propById.get(p.id);
           if (entry) {
             enqueue(`prop:${entry.id}`, "backbone", () => prewarmPropAsset(entry));
@@ -374,6 +461,8 @@ export function startTieredEpisodePreloader(
             enqueue(`char:${entry.costumeId}`, "backbone", () => prewarmCharacterAsset(entry));
           }
         }
+        const heldProp = enable3D && ev.type === "char_item" && ev.id ? propById.get(ev.id) : undefined;
+        if (heldProp) enqueue(`prop:${heldProp.id}`, "backbone", () => prewarmPropAsset(heldProp));
       }
     }
   }
@@ -1151,6 +1240,13 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           });
         }
 
+        // The model is cached and reused: drop hand props a previous use of it left on its bones
+        const staleItems: THREE.Object3D[] = [];
+        modelScene.traverse((n) => {
+          if (n.userData.charItem) staleItems.push(n);
+        });
+        for (const n of staleItems) n.removeFromParent();
+
         const rootGroup = new THREE.Group();
         rootGroup.name = `char_${cState.name}`;
         rootGroup.add(modelScene);
@@ -1171,6 +1267,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           currentEmotion: null,
           motionClips: new Map(),
           copyFaceBones: createFaceBonesCopier(modelScene),
+          items: new Map(),
         };
         charactersRef.current.set(cState.name, loaded);
       } catch (err) {
@@ -1211,13 +1308,148 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     const startTurn = cState.motionStartTurn;
     const startsHere =
       startTurn !== undefined && (startTurn === turnIndex || (arrivedInOrder && startTurn === turnIndex - 1));
-    await applyCharacterMotion(
-      loaded,
-      cState.motionId,
-      cState.motionUrl,
-      cState.motionCmd ?? cState.motionId,
-      motionStartFor(cState, startsHere)
+    await Promise.all([
+      applyCharacterMotion(
+        loaded,
+        cState.motionId,
+        cState.motionUrl,
+        cState.motionCmd ?? cState.motionId,
+        motionStartFor(cState, startsHere)
+      ),
+      syncCharacterItems(loaded, cState.items ?? {}),
+    ]);
+  };
+
+  // Hand props ([キャラ小物直接表示] / [キャラ小物表示] / [キャラ小物非表示]): parented to the
+  // character's bones, so they follow its motion and visibility
+  const syncCharacterItems = async (loaded: LoadedCharacter, items: Record<string, CharacterItemState>) => {
+    const loads: Promise<void>[] = [];
+    for (const [key, held] of loaded.items) {
+      if (items[key]?.id !== held.id) {
+        held.group.removeFromParent();
+        loaded.items.delete(key);
+      }
+    }
+    for (const [key, item] of Object.entries(items)) {
+      const held = loaded.items.get(key);
+      if (held) {
+        // same prop under the same key: a later command can still move it
+        const parent = findItemParent(loaded.modelScene, item);
+        if (parent && held.group.parent !== parent) parent.add(held.group);
+        setUnityLocalTransform(held.group, item.position, item.rotation, item.scale);
+        continue;
+      }
+      const parent = findItemParent(loaded.modelScene, item);
+      if (!parent) {
+        // the game logs and skips it too (Transform.Find / GetHumanBone found nothing)
+        console.warn(`[StageCanvas] ${loaded.name}: no bone ${item.socketPath ?? item.bone} for ${item.id}`);
+        continue;
+      }
+      const group = new THREE.Group();
+      group.name = `item_${key}`;
+      group.userData.charItem = true;
+      setUnityLocalTransform(group, item.position, item.rotation, item.scale);
+      parent.add(group);
+      loaded.items.set(key, { id: item.id, group });
+      loads.push(
+        loadPropModel(item, key).then(
+          (model) => void group.add(model),
+          (e) => console.warn(`[StageCanvas] Hand prop load failed for ${item.id}:`, e)
+        )
+      );
+    }
+    await Promise.all(loads);
+  };
+
+  // A prop's model (its GLB plus any extra GLBs), ready to place: a set prop or a hand prop
+  const loadPropModel = async (pState: PropModel, name: string): Promise<THREE.Group> => {
+    const urls = [pState.glbUrl, ...(pState.extraGlbUrls || [])];
+    const gltfs = await Promise.all(
+      urls.map((u) => loadGltfCached(gltfLoaderRef.current, u).catch(() => null))
     );
+    const group = new THREE.Group();
+    group.name = `prop_${name}`;
+    for (const g of gltfs) {
+      if (!g?.scene) continue;
+      const clone = g.scene.clone(true);
+      // Props exported from the raw data (scripts/export_costume.py) keep the prefab's own
+      // layout (set pieces sit far from their parent) and mark what the prefab has inactive
+      // or disabled; the repositioning below is only for hamproductions' "(Clone)" roots.
+      const fromRawData = isGameCostume(clone);
+      if (fromRawData) {
+        // The command's transform replaces the prefab root's own: StoryModelSpace.ItemShow (RVA
+        // 0x4154308) and ModelAttachItemHandler.Attach set the instance's localPosition / scale /
+        // eulerAngles. Some roots carry an offset their children undo (ppadv252_rurinoroom's
+        // (0.35, 0.88, -1.31)); keeping it would put Rurino's floor 0.88 m too high.
+        for (const root of clone.children) {
+          root.position.set(0, 0, 0);
+          root.quaternion.identity();
+          root.scale.set(1, 1, 1);
+        }
+      }
+      const rawMeshes: THREE.Mesh[] = [];
+      clone.traverse((node: any) => {
+        if (fromRawData) {
+          if (node.userData.active === false || node.userData.rendererEnabled === false) node.visible = false;
+          if (node instanceof THREE.Mesh) rawMeshes.push(node);
+          return;
+        }
+        if (
+          node.name &&
+          (node.name.endsWith("(Clone)") ||
+            node.name.endsWith("Clone") ||
+            node.position.length() > 10)
+        ) {
+          node.position.set(0, 0, 0);
+          if (
+            Math.round(node.scale.x) === 200 &&
+            Math.round(node.scale.y) === 100 &&
+            Math.round(node.scale.z) === 100
+          ) {
+            node.scale.set(100, 100, 100);
+          }
+        }
+        if (!(node instanceof THREE.Mesh)) return;
+        // Apply external textureMap if available
+        const mat = Array.isArray(node.material) ? node.material[0] : node.material;
+        const matName = mat?.name || "";
+        const tmapEntry =
+          pState.textureMap?.[matName] ||
+          pState.textureMap?.[node.name] ||
+          Object.values(pState.textureMap || {})[0];
+        if (tmapEntry) {
+          const texFile =
+            tmapEntry._BaseMap || tmapEntry._MainTex || Object.values(tmapEntry)[0];
+          if (texFile) {
+            const tex = loadTextureCached(
+              texLoaderRef.current,
+              `${pState.textureDir}${texFile}`,
+              false
+            );
+            node.material = new THREE.MeshBasicMaterial({
+              map: tex,
+              transparent: true,
+              alphaTest: 0.05,
+              side: THREE.DoubleSide,
+            });
+          }
+        } else if (mat?.map) {
+          node.material = new THREE.MeshBasicMaterial({
+            map: mat.map,
+            side: THREE.DoubleSide,
+          });
+        }
+      });
+      await Promise.all(
+        rawMeshes.map(async (mesh) => {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          const out = await Promise.all(mats.map((m) => gamePropMaterial(m, g.parser)));
+          mesh.material = Array.isArray(mesh.material) ? out : out[0];
+        })
+      );
+      group.add(clone);
+    }
+    return group;
   };
 
   // Ensure 3D story props (bus window, desk, chair, etc.) are loaded and positioned
@@ -1239,70 +1471,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           propsRef.current.delete(alias);
         }
         try {
-          const urls = [pState.glbUrl, ...(pState.extraGlbUrls || [])];
-          const gltfs = await Promise.all(
-            urls.map((u) => loadGltfCached(gltfLoaderRef.current, u).catch(() => null))
-          );
-          const group = new THREE.Group();
-          group.name = `prop_${alias}`;
-          for (const g of gltfs) {
-            if (!g?.scene) continue;
-            const clone = g.scene.clone(true);
-            // Props exported from the raw data (scripts/export_costume.py) keep the prefab's own
-            // layout (set pieces sit far from their parent) and mark what the prefab has inactive
-            // or disabled; the repositioning below is only for hamproductions' "(Clone)" roots.
-            const fromRawData = isGameCostume(clone);
-            clone.traverse((node: any) => {
-              if (fromRawData) {
-                if (node.userData.active === false || node.userData.rendererEnabled === false) node.visible = false;
-              } else if (
-                node.name &&
-                (node.name.endsWith("(Clone)") ||
-                  node.name.endsWith("Clone") ||
-                  node.position.length() > 10)
-              ) {
-                node.position.set(0, 0, 0);
-                if (
-                  Math.round(node.scale.x) === 200 &&
-                  Math.round(node.scale.y) === 100 &&
-                  Math.round(node.scale.z) === 100
-                ) {
-                  node.scale.set(100, 100, 100);
-                }
-              }
-              if (!(node instanceof THREE.Mesh)) return;
-              // Apply external textureMap if available
-              const mat = Array.isArray(node.material) ? node.material[0] : node.material;
-              const matName = mat?.name || "";
-              const tmapEntry =
-                pState.textureMap?.[matName] ||
-                pState.textureMap?.[node.name] ||
-                Object.values(pState.textureMap || {})[0];
-              if (tmapEntry) {
-                const texFile =
-                  tmapEntry._BaseMap || tmapEntry._MainTex || Object.values(tmapEntry)[0];
-                if (texFile) {
-                  const tex = loadTextureCached(
-                    texLoaderRef.current,
-                    `${pState.textureDir}${texFile}`,
-                    false
-                  );
-                  node.material = new THREE.MeshBasicMaterial({
-                    map: tex,
-                    transparent: true,
-                    alphaTest: 0.05,
-                    side: THREE.DoubleSide,
-                  });
-                }
-              } else if (mat?.map) {
-                node.material = new THREE.MeshBasicMaterial({
-                  map: mat.map,
-                  side: THREE.DoubleSide,
-                });
-              }
-            });
-            group.add(clone);
-          }
+          const group = await loadPropModel(pState, alias);
+          if (!sceneRef.current) return;
           sceneRef.current.add(group);
           loadedProp = { alias, id: pState.id, group };
           propsRef.current.set(alias, loadedProp);
@@ -1558,6 +1728,9 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         case "prop_show":
         case "prop_hide":
           if (ev.props) void syncProps(ev.props);
+          break;
+        case "char_item":
+          if (c && ev.characterState) void syncCharacterItems(c, ev.characterState.items ?? {});
           break;
         case "fade":
           applyFade(ev.fade ?? ev, Number(ev.duration || 0));
