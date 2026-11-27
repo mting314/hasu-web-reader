@@ -183,7 +183,16 @@ are layer 21, drawn by the story renderer's `CustomRenderObjects` feature after 
 2× (`_AlphaToMaskAvailable` = 1). The eye shader (`Character/ToonShader_CharacterEye`,
 `__toonshader_charactereye.shader`) is converted by `scripts/msl_to_glsl.py` into `EYE_VERT` /
 `EYE_FRAG` in `src/engine/shaders/uberToonGame.ts` and wired via `createGameEyeMaterial` in
-`src/engine/gameToonMaterial.ts`.
+`src/engine/gameToonMaterial.ts`. A few NPC costumes (Sachi 9007, Tsukasa 9008, 9011) use older
+versions of both: `MELPOT/Toon/UberToonShader(HLSLMacros)` (Sachi's face; same passes and variant
+layout, its own property set with a tertiary colour layer, and an inline `sampler_Linear_Repeat`
+whose state the converter emits as `*_SAMPLERS`) and `MELPOT/Toon/UberToonShader_Eye` (one Forward
+variant, a highlight animated with URP's `_TimeParameters`, set per frame by `setToonTime`). They
+bind render state to the same material properties as the current shaders, so `TOON_PROGRAMS` /
+`EYE_PROGRAMS` in `gameToonMaterial.ts` only swap programs and defaults by shader name. The
+extracted programs and ShaderLab text live in `.inspect-tmp/shader/` (`hlsl_*`, `ueye_*`). Read
+render state from the shader's serialized `m_State` (it names the bound properties), not from
+UnityPy's decompiled text, which prints `Cull [_CullMode]` as `Cull Off`.
 
 **Motions.** A motion GLB has the skeleton plus clips `m_00_NNNNN@i/@a/@l/@o` (in, action,
 loop, out; one motion, `mot_00_00040`, names them `@r@i` etc.), `m_breathing@l` and hand grip
@@ -216,7 +225,9 @@ after one frame), so anything that edits bones after `mixer.update` must put the
 back before the next update; and starting/stopping actions inside a mixer `finished` event
 makes the mixer skip an action that frame. Earlier attempts that juggled several weighted
 actions popped or sagged toward the rest pose whenever a switch interrupted another.
-Breathing isn't reproduced yet.
+Breathing (`setBreathing`) plays the motion's `m_breathing@l` as a separate additive action
+(`THREE.AnimationUtils.makeClipAdditive`) at the command's weight, keeping its phase across
+motion switches.
 
 Tracks target a reference character's bones (`KahDeA_*` and `Kah_*`). `retargetMotionClips`
 renames them to the costume's prefix, skips spring (`SP_*`) and hair bones when the characters
@@ -515,8 +526,11 @@ loading gates, fullscreen layout, pause-on-hide/scroll, line-list scrolling, con
 ## Known gaps (episode 1)
 
 The build prints referenced assets that aren't in the store. Currently unavailable or wrong:
-- only the four episode-1 costumes are re-exported with `scripts/export_costume.py`; the bucket
-  still has the old ones
+- all 475 `3d_costume_*` prefabs (the 356 the story scripts use and the rest) are exported with
+  `scripts/export_costume.py` and in the bucket, and every material uses a shader the reader
+  converts, except one: Tsukasa's `3d_costume_2007900801` has a third Eye submesh (12 triangles)
+  with `Universal Render Pipeline/Lit`'s `Default_Material`. The reader hides meshes with unknown
+  shaders (`prepareGameCostume`), so it isn't drawn; what the game draws there is unverified.
 - the reader starts at the first line, so a motion played during an episode's opening fade-in
   (e.g. line 11 of 10300102) isn't shown
 - secondary motion and helper-bone constraints aren't wired up in the reader yet. As documented

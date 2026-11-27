@@ -9,7 +9,7 @@ import {
   retargetMotionClips,
   ToonMaterialParams,
 } from "../engine/UberToonMaterial";
-import { isGameCostume, prepareGameCostume, setToonLighting } from "../engine/gameToonMaterial";
+import { isGameCostume, prepareGameCostume, setToonLighting, setToonTime } from "../engine/gameToonMaterial";
 import { createFaceBonesCopier } from "../engine/faceBonesCopier";
 import { EmotionData, StoryEmotion } from "../engine/storyEmotion";
 import { FaceFlush } from "../engine/faceFlush";
@@ -700,6 +700,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     const renderFrame = (dt: number) => {
       stageNowSecRef.current += dt;
       const now = stageNowSecRef.current;
+      setToonTime(now);
 
       // Update camera interpolation in ADV mode
       if (cameraModeRef.current === "adv") {
