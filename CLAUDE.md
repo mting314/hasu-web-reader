@@ -562,9 +562,9 @@ The build prints referenced assets that aren't in the store. Currently unavailab
   bucket as well (`export_costume.py` refuses to write beside them without `--replace`), or the
   reader loads both. Not exportable as meshes:
   particle-only props (rain, confetti, cherry blossoms) and parts on Unity's other built-in
-  meshes (e.g. drink straws on the Cylinder). Backgrounds aren't all 1940x1100 @ 100 px/unit
-  (27 of 154 recorded in `data_cache/background_sizes.json` differ); the reader's fixed
-  19.2 x 10.8 m plane distorts those
+  meshes (e.g. drink straws on the Cylinder). A background exported without its
+  `data_cache/background_sizes.json` entry is drawn at the standard 19.4 x 11.0 m (the build
+  warns); re-run `export_backgrounds.py` for it
 
 ## Environment gotchas
 
