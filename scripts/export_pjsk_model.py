@@ -181,11 +181,7 @@ class PjskModelExporter(CostumeExporter):
         for obj in self.env.objects:
             if obj.type.name != "SkinnedMeshRenderer" or self.bundle_of(obj) is None:
                 continue
-            tt = obj.read_typetree()
-            go = obj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
-            tr = next(c["component"] for c in go["m_Component"]
-                      if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
-            if (obj.assets_file.name, tr["m_PathID"]) in self.node_of:
+            if self._host(obj) is not None:
                 yield obj
 
     def character_hair(self) -> None:
@@ -203,10 +199,7 @@ class PjskModelExporter(CostumeExporter):
             if "offset" not in tt or "headTransform" not in tt:
                 continue
             head = self.node_of.get(self._tkey(obj.assets_file, tt["headTransform"]))
-            go = obj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
-            tr = next(c["component"] for c in go["m_Component"]
-                      if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
-            host = self.node_of.get((obj.assets_file.name, tr["m_PathID"]))
+            host = self._host(obj)
             if head is None or host is None:
                 continue
             o = tt["offset"]
@@ -270,6 +263,8 @@ class PjskModelExporter(CostumeExporter):
         for cls, host, tt, af in found:
             if cls.endswith("Collider"):
                 kind = cls[len("Spring"):-len("Collider")].lower()
+                if host in colliders:
+                    print(f"  [warn] two spring colliders on {nodes[host]['name']}; keeping the {kind}")
                 nodes[host].setdefault("extras", {}).update(utjNode=host, utjSpringCollider={
                     "type": kind, "radius": tt.get("radius", 0.0), "height": tt.get("height", 0.0),
                     "width": tt.get("width", 0.0)})
@@ -277,6 +272,9 @@ class PjskModelExporter(CostumeExporter):
         prefixes = ["CL_Hip", "CL_Chest", "CL_Left_Arm", "CL_Right_Arm", "CL_Left_Elbow", "CL_Right_Elbow"]
         for cls, host, tt, af in found:
             extras = nodes[host].setdefault("extras", {})
+            key = "utjSpringManager" if cls == "SpringManager" else "utjSpringBone"
+            if not cls.endswith("Collider") and key in extras:
+                print(f"  [warn] two {key} components on {nodes[host]['name']}; keeping the last")
             if cls == "SpringManager":
                 extras["utjSpringManager"] = {
                     "isPaused": bool(tt["isPaused"]), "simulationFrameRate": tt["simulationFrameRate"],

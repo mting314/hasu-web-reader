@@ -501,17 +501,21 @@ A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored i
   hand-rolled exception the user approved, again for this feature only**. It simulates in world
   space with lengths and forces times the model's scale (exact similarity: a 1.64× model moves like
   the native one), uses fixed 1/60 s steps from real frame time, and resets when a character
-  jumps. All PJSK managers have length limits and ground collision off and no panel colliders.
+  jumps (a manager node moving > 0.15 model units or turning > 30° in one frame). Every model has
+  one manager on Neck (hair, plus ribbons on airi/emu/mizuki/rin) and one on Hip; all have length
+  limits and ground collision off and no panel colliders. `dynamicRatio` (0.5) never applies:
+  `SetupSpringBone` marks no bone as animated, so UpdateDynamics passes 1.
   **Reader-only hair collision** (`readerCollision`, on in the cast swap, user-approved; off =
   exactly the game): the game's colliders suit PJSK's standing dances, but Hasu's tilted/seated
   poses pushed strands into the chest and arms (UTJ only tests tips, and e.g. Ichika's right
-  strands only get the *left* arm). So every `*hair*` bone also gets the torso (`CL_Chest`,
-  `Spine`, `Waist`, `Hip`) and arm/forearm capsules, and the bone's whole length is kept out
-  (closest point of the bone to each collider axis, turned about its head; run again after the
-  angle limits so the body wins). Torso colliders a strand already overlaps in its modelled rest
-  shape are skipped (otherwise Shiho's back hair flares 28°). Check:
-  `/tmp/pjsk-tools/spring_penetration.ts <glb> rest|seated|tilt25|tilt-40 [fix]`.
-  Headless check: `/tmp/pjsk-tools/spring_sim_all.ts` (bundle with esbuild) runs every model.
+  strands only get the *left* arm). So every bone of the Neck manager also gets the torso
+  (`CL_Chest`, `Spine`, `Waist`, `Hip`) and arm/forearm capsules, and the bone's whole length is
+  kept out (closest point of the bone to each collider axis, turned about its head; run again
+  after the angle limits so the body wins). Torso colliders a strand already overlaps in its
+  modelled rest shape are skipped (otherwise Shiho's back hair flares 28°).
+  Headless check, `scripts/pjsk_spring_check.ts` (bundle with esbuild, usage at the top):
+  `all <model dir> [scale] [fix]` (every model: rest + hip sway, NaN, scale invariance) and
+  `pose <glb> rest|seated|tilt25|tilt-40 [fix]` (tips / bones inside colliders).
 - Not done yet: the stage `SekaiDirectionalLight` shadow colour/threshold (still Cleista's
   0.40625), the Eyelash pass, helper bones (`*ArmRoll`, `*EllbowSupport`).
 - Export gotcha (fixed in `export_costume.py`): lossless WebP drops RGB under alpha 0 unless saved

@@ -37,6 +37,7 @@ interface AngleLimitsData {
 interface SpringBoneData {
   stiffnessForce: number;
   dragForce: number;
+  springConstant?: number;
   springForce: [number, number, number];
   pivotNode?: number | null;
   angularStiffness: number;
@@ -142,6 +143,16 @@ class Collider {
     readonly node: THREE.Object3D,
     readonly data: ColliderData
   ) {}
+  /** Reader addition: the collider as a world segment a-b (a point for a sphere) and its world
+   * radius, for the whole-bone tests (collideSegment, the rest-overlap check). */
+  worldAxis(a: THREE.Vector3, b: THREE.Vector3): number {
+    const m = this.node.matrixWorld;
+    a.setFromMatrixPosition(m);
+    if (this.data.type === "capsule") b.set(0, this.data.height, 0).applyMatrix4(m);
+    else b.copy(a);
+    return this.data.radius * _v3.setFromMatrixColumn(m, 0).length();
+  }
+
   /** SpringManager.PreUpdateCollider: the collider's world-to-local matrix for this step. */
   preUpdate() {
     this.inverse.copy(this.node.matrixWorld).invert();
@@ -287,9 +298,8 @@ class SpringBone {
   /** reader addition: also keep the bone's whole length out of its colliders (collideSegment) */
   segmentCollision = false;
 
-  get allColliders(): Collider[] {
-    return [...this.capsuleColliders, ...this.sphereColliders];
-  }
+  /** capsules then spheres, as CheckForCollision walks them */
+  readonly allColliders: Collider[];
 
   constructor(
     readonly node: THREE.Object3D,
@@ -298,7 +308,9 @@ class SpringBone {
     readonly sphereColliders: Collider[],
     readonly capsuleColliders: Collider[],
     readonly lengthLimitTargets: THREE.Object3D[]
-  ) {}
+  ) {
+    this.allColliders = [...capsuleColliders, ...sphereColliders];
+  }
 
   /** Initialize: run on the rest pose, with `toNative` = the model's world-to-local matrix. */
   initialize(toNative: THREE.Matrix4) {
@@ -373,7 +385,7 @@ class SpringBone {
   }
 
   satisfyConstraintsAndComputeRotation(m: SpringManager, deltaTime: number, scale: number) {
-    if (m.data.enableLengthLimits) this.applyLengthLimits(deltaTime);
+    if (m.data.enableLengthLimits) this.applyLengthLimits(deltaTime, scale);
     if (m.data.enableCollision) {
       this.checkForCollision(m, scale);
       if (this.segmentCollision) this.collideSegment(scale);
@@ -385,8 +397,9 @@ class SpringBone {
     const tip = this.currTipPos;
     if (Number.isNaN(tip.x) || Number.isNaN(tip.y) || Number.isNaN(tip.z)) this.reset(scale);
 
-    // dynamicRatio only blends bones the current motion animates; the stand-in's spring bones
-    // never are (the Hasu motions don't reach them), so the ratio is 1: the simulated rotation.
+    // UpdateDynamics passes `boneIsAnimatedStates[i] ? dynamicRatio : 1`, and PJSK's
+    // SetupSpringBone (0x52572F4) fills those states from an empty name list, so every bone gets
+    // 1: the simulated rotation, never Lerp(skinAnimationLocalRotation, actual, 0.5).
     this.computeRotation(this.node.quaternion);
     this.node.updateMatrixWorld(true);
   }
@@ -456,11 +469,7 @@ class SpringBone {
     const length = this.springLength * scale;
     for (let pass = 0; pass < SEGMENT_PASSES; pass++) {
       for (const c of this.allColliders) {
-        const m = c.node.matrixWorld;
-        _axisA.setFromMatrixPosition(m);
-        if (c.data.type === "capsule") _axisB.set(0, c.data.height, 0).applyMatrix4(m);
-        else _axisB.copy(_axisA);
-        const combined = c.data.radius * _v3.setFromMatrixColumn(m, 0).length() + boneRadius;
+        const combined = c.worldAxis(_axisA, _axisB) + boneRadius;
         // A head inside the collider can't be cleared by turning the bone: push only the tip out
         // (UTJ's HeadIsEmbedded response); otherwise clear the deepest point of the bone.
         closestPointsOnSegments(head, head, _axisA, _axisB, _p, _q);
@@ -480,14 +489,15 @@ class SpringBone {
     }
   }
 
-  private applyLengthLimits(deltaTime: number) {
+  private applyLengthLimits(deltaTime: number, scale: number) {
     if (this.lengthLimitTargets.length === 0) return;
-    const accelerationMultiplier = 0.5 * deltaTime * deltaTime; // SpringConstant
-    const movement = new THREE.Vector3();
-    const toTarget = new THREE.Vector3();
+    // upstream's const SpringConstant (0.5); PJSK's SpringBone serializes it as a field
+    const accelerationMultiplier = (this.data.springConstant ?? 0.5) * deltaTime * deltaTime;
+    const movement = _movement.set(0, 0, 0);
+    const toTarget = _toTarget;
     this.lengthLimitTargets.forEach((t, i) => {
       toTarget.copy(this.currTipPos).sub(worldPosition(t, _v3));
-      const distanceFromEquilibrium = toTarget.length() - this.lengthsToLimitTargets[i];
+      const distanceFromEquilibrium = toTarget.length() - this.lengthsToLimitTargets[i] * scale;
       movement.addScaledVector(toTarget.normalize(), -accelerationMultiplier * distanceFromEquilibrium);
     });
     this.currTipPos.add(movement);
@@ -502,6 +512,9 @@ const _down = new THREE.Vector3();
 const _back = new THREE.Vector3();
 /** overlapping colliders (the chest spheres) can push a bone from one into the next */
 const SEGMENT_PASSES = 6;
+const _movement = new THREE.Vector3();
+const _toTarget = new THREE.Vector3();
+const _sumOfForces = new THREE.Vector3();
 const _segHead = new THREE.Vector3();
 const _axisA = new THREE.Vector3();
 const _axisB = new THREE.Vector3();
@@ -561,11 +574,17 @@ function closestPointsOnSegments(
   return s;
 }
 
+/** In one frame, more than this many model units (×scale; PJSK models are ~1 unit tall) or
+ * radians of turn is a jump, not motion: 0.15 units in 1/60 s is ~9 m/s, 30° is 1800°/s. */
+const JUMP_DISTANCE = 0.15;
+const JUMP_ANGLE = THREE.MathUtils.degToRad(30);
+
 // ---- SpringManager.cs ----------------------------------------------------------------------------
 
 class SpringManager {
-  /** last position of the manager's node, to spot jumps */
+  /** last world position / rotation of the manager's node, to spot jumps */
   readonly lastPosition = new THREE.Vector3(Number.NaN, 0, 0);
+  readonly lastRotation = new THREE.Quaternion();
   constructor(
     readonly node: THREE.Object3D,
     readonly data: SpringManagerData,
@@ -574,7 +593,7 @@ class SpringManager {
 
   updateDynamics(timeStep: number, scale: number) {
     if (this.data.isPaused) return; // ComputeRotation with unchanged tips keeps the rotations
-    const sumOfForces = new THREE.Vector3().fromArray(this.data.gravity).multiplyScalar(scale);
+    const sumOfForces = _sumOfForces.fromArray(this.data.gravity).multiplyScalar(scale);
     for (const bone of this.bones) {
       bone.updateSpring(timeStep, sumOfForces, scale);
       bone.satisfyConstraintsAndComputeRotation(this, timeStep, scale);
@@ -597,15 +616,16 @@ function depth(n: THREE.Object3D): number {
   return d;
 }
 
-/** The body colliders every hair strand gets with `readerCollision`: torso, upper arms, forearms. */
+/** The body colliders every head spring bone gets with `readerCollision`: torso, upper arms, forearms. */
 const READER_HAIR_COLLIDERS = /^CL_(Chest|Spine|Waist|Hip|Left_Arm|Right_Arm|Left_Elbow|Right_Elbow)/;
 
 /**
  * Build the springs of a freshly cloned PJSK model (rest pose), or null if it has none.
  * `readerCollision` (the cast swap turns it on; off = exactly the game): the game's colliders are
  * meant for PJSK's standing dance motions, and Hasu's tilted / seated story poses push the hair
- * into the body, so every hair strand collides with all the torso and arm colliders, along the
- * bone's whole length instead of only at its tip (collideSegment).
+ * into the body, so every bone of the head's manager (Neck: hair and head accessories) collides
+ * with all the torso and arm colliders, along the bone's whole length instead of only at its tip
+ * (collideSegment).
  */
 export function createUtjSpringBones(model: THREE.Object3D, opts: { readerCollision?: boolean } = {}): UtjSpringBones | null {
   const byIndex = new Map<number, THREE.Object3D>();
@@ -635,7 +655,8 @@ export function createUtjSpringBones(model: THREE.Object3D, opts: { readerCollis
       if (d.panelColliders?.length) console.warn("[utjSpringBone] panel colliders aren't ported", node.name);
       const spheres = pick(d.sphereColliders, "sphere");
       const capsules = pick(d.capsuleColliders, "capsule");
-      const readerHair = !!opts.readerCollision && node.name.includes("hair");
+      // Everything the head's manager (on Neck) simulates: hair, and ribbons on airi, emu, mizuki, rin
+      const readerHair = !!opts.readerCollision && n.name === "Neck";
       if (readerHair) {
         // The modelled rest shape is clean by definition: a torso collider the strand already
         // overlaps at rest would only push it away from the body (e.g. Shiho's back hair rests
@@ -651,11 +672,7 @@ export function createUtjSpringBones(model: THREE.Object3D, opts: { readerCollis
             list.push(c);
             continue;
           }
-          const m = c.node.matrixWorld;
-          _axisA.setFromMatrixPosition(m);
-          if (c.data.type === "capsule") _axisB.set(0, c.data.height, 0).applyMatrix4(m);
-          else _axisB.copy(_axisA);
-          const combined = c.data.radius * _v3.setFromMatrixColumn(m, 0).length() + d.radius;
+          const combined = c.worldAxis(_axisA, _axisB) + d.radius;
           closestPointsOnSegments(head, tip, _axisA, _axisB, _p, _q);
           if (_p.distanceToSquared(_q) >= combined * combined) list.push(c);
         }
@@ -695,11 +712,15 @@ export function createUtjSpringBones(model: THREE.Object3D, opts: { readerCollis
     update(dt) {
       model.updateWorldMatrix(true, true);
       const scale = _v1.setFromMatrixScale(model.matrixWorld).x;
-      // A jump of the character (seek, teleporting キャラ表示) would fling the hair.
+      // A jump of the character (seek, teleporting キャラ表示, an instant キャラ向き変更, a seated
+      // pose snapping to standing) would fling the hair and skirt through the body.
       for (const m of managers) {
         const p = worldPosition(m.node, _v2);
-        if (!(p.distanceToSquared(m.lastPosition) < (0.5 * scale) ** 2)) needsReset = true;
+        const q = worldRotation(m.node, _q1);
+        if (!(p.distanceToSquared(m.lastPosition) < (JUMP_DISTANCE * scale) ** 2)) needsReset = true;
+        if (q.angleTo(m.lastRotation) > JUMP_ANGLE) needsReset = true;
         m.lastPosition.copy(p);
+        m.lastRotation.copy(q);
       }
       if (needsReset) {
         needsReset = false;
