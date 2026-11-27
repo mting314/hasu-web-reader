@@ -10,6 +10,8 @@ export interface TranslationSource {
   homepage?: string;
   /** how the text was used or adapted */
   note?: string;
+  /** individual contributors by role, as the translator's page credits them */
+  credits?: { role: string; people: { name: string; url?: string }[] }[];
 }
 
 export interface ManifestCharacterAsset {
