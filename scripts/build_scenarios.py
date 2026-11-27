@@ -160,6 +160,25 @@ def parse_vec(s: str, default: list[float]) -> list[float]:
         return default
 
 
+def split_mnemonic(args: list[str]) -> tuple[list[str], list[list[float]]]:
+    """The game's StoryMnemonic keeps a command's vector arguments (`x,y,z`) in a list of their own,
+    apart from the plain strings, and commands index each list separately: in
+    `[キャラ小物直接表示 さやか RightHand ppadv441_sp_sayaka sayakasp  kahosp pos rot scale]`
+    the stray `kahosp` is string 4 (unused) and pos/rot/scale are still vectors 0-2."""
+    strings: list[str] = []
+    vectors: list[list[float]] = []
+    for a in args:
+        parts = a.split(",")
+        try:
+            if len(parts) > 1:
+                vectors.append([float(x) for x in parts])
+                continue
+        except ValueError:
+            pass
+        strings.append(a)
+    return strings, vectors
+
+
 def clean_text(raw_text: str) -> str:
     return (
         raw_text.replace("[r]", "\n")
@@ -295,6 +314,13 @@ MISSING_ASSETS: dict[str, str] = {}
 STORE_MANIFEST_PATH = DATA_CACHE_DIR / "asset_store_manifest.txt"
 STORE_MANIFEST: set[str] | None = (
     set(STORE_MANIFEST_PATH.read_text(encoding="utf-8").split()) if STORE_MANIFEST_PATH.exists() else None
+)
+
+# The game's ModelSocketData assets, where `[キャラ小物表示]` attaches a hand prop
+# (scripts/export_item_sockets.py).
+ITEM_SOCKETS_PATH = DATA_CACHE_DIR / "item_sockets.json"
+ITEM_SOCKETS: dict[str, dict[str, Any]] = (
+    json.loads(ITEM_SOCKETS_PATH.read_text(encoding="utf-8")) if ITEM_SOCKETS_PATH.exists() else {}
 )
 
 
@@ -465,7 +491,7 @@ def compile_script(
             return {"props": copy.deepcopy(state["props"])}
         if t.startswith("light_") or t == "post_effect":
             return {"lighting": copy.deepcopy(state["lighting"])}
-        if t in ("char_spawn", "char_move", "char_lookat") and ev.get("character") in state["characters"]:
+        if t in ("char_spawn", "char_move", "char_lookat", "char_item") and ev.get("character") in state["characters"]:
             return {"characterState": copy.deepcopy(state["characters"][ev["character"]])}
         return {}
 
@@ -581,6 +607,30 @@ def compile_script(
                     ev["characterState"] = copy.deepcopy(state["characters"][ev["character"]])
                     ev["characterState"]["position"] = copy.deepcopy(ev["position"])
 
+    def prop_model(prop_id: str) -> dict[str, Any] | None:
+        """Where a prop's model is in our store (set props and hand props alike), or None if it
+        isn't: then it's left off the stage rather than shipping a reference that can only 404."""
+        # props missing from hamproductions' index (ppadv006_pamphlet) are exported from the raw
+        # data by scripts/export_costume.py to the same layout: ppadv/<id>/<id>.glb
+        pinfo = assets_by_id.get(prop_id) or {}
+        if pinfo and not hamproductions_prop_complete(pinfo):
+            # our export from the raw data: one self-contained GLB at the same path, with none of
+            # the index's extra GLBs or texture map
+            pinfo = {}
+        glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
+        if not asset_in_store(glb_rel):
+            MISSING_ASSETS.setdefault(glb_rel, script_id)
+            return None
+        tex_dir = pinfo.get("textureDir") or f"ppadv/{prop_id}/"
+        if not tex_dir.endswith("/"):
+            tex_dir += "/"
+        return {
+            "glbUrl": asset_url(glb_rel, script_id),
+            "extraGlbUrls": [asset_url(f"3d/{e}", script_id) for e in (pinfo.get("extraGlbs") or [])],
+            "textureDir": f"/assets/3d/{tex_dir}",
+            "textureMap": pinfo.get("textureMap") or {},
+        }
+
     def attach_event(ev: dict[str, Any]) -> None:
         nonlocal prev_anim
         ev["timestampSec"] = round(clock_sec, 3)
@@ -652,6 +702,8 @@ def compile_script(
             if not tex_dir.endswith("/"):
                 tex_dir += "/"
             char_prefix = cmeta["en"][:3].lower()
+            prev = state["characters"].get(char_name) or {}
+            prev_costume, prev_items = prev.get("costumeId"), prev.get("items") or {}
             eye_tex = None
             for t in asset_info.get("textures") or []:
                 # only old hamproductions GLBs use it; costumes re-exported by export_costume.py
@@ -683,7 +735,9 @@ def compile_script(
                 "lookAt": {"mode": "angle", "value": 0.0},
                 "blush": 0.0,
                 "tears": False,
-                "attachedProps": [],
+                # hand props by key (キャラ小物表示 / 直接表示); they hang off the costume's model, so
+                # they're kept while the costume stays the same
+                "items": prev_items if prev_costume == costume_id else {},
             }
             attach_event({"type": "char_spawn", "character": char_name, "costumeId": costume_id, "position": pos, "rotation": rot,
                           "motionCmd": state["characters"][char_name]["motionCmd"]})
@@ -847,31 +901,14 @@ def compile_script(
             pos = parse_vec(args[2], [0.0, 0.0, 0.0]) if len(args) >= 3 else [0.0, 0.0, 0.0]
             scale = parse_vec(args[3], [1.0, 1.0, 1.0]) if len(args) >= 4 else [1.0, 1.0, 1.0]
             rot = parse_vec(args[4], [0.0, 0.0, 0.0]) if len(args) >= 5 else [0.0, 0.0, 0.0]
-            # props missing from hamproductions' index (ppadv006_pamphlet) are exported from the raw
-            # data by scripts/export_costume.py to the same layout: ppadv/<id>/<id>.glb
-            pinfo = assets_by_id.get(prop_id) or {}
-            if pinfo and not hamproductions_prop_complete(pinfo):
-                # our export from the raw data: one self-contained GLB at the same path, with none of
-                # the index's extra GLBs or texture map
-                pinfo = {}
-            glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
-            if not asset_in_store(glb_rel):
-                # No model for this prop in our store: leave it off the stage rather than
-                # shipping a reference that can only 404.
-                MISSING_ASSETS.setdefault(glb_rel, script_id)
+            model = prop_model(prop_id)
+            if model is None:
                 state["props"].pop(alias, None)  # the slot is emptied, not left with an older prop
                 continue
-            extra_urls = [asset_url(f"3d/{e}", script_id) for e in (pinfo.get("extraGlbs") or [])]
-            tex_dir = pinfo.get("textureDir") or f"ppadv/{prop_id}/"
-            if not tex_dir.endswith("/"):
-                tex_dir += "/"
             state["props"][alias] = {
                 "id": prop_id,
                 "alias": alias,
-                "glbUrl": asset_url(glb_rel, script_id),
-                "extraGlbUrls": extra_urls,
-                "textureDir": f"/assets/3d/{tex_dir}",
-                "textureMap": pinfo.get("textureMap") or {},
+                **model,
                 "visible": True,
                 "position": pos,
                 "scale": scale,
@@ -885,6 +922,49 @@ def compile_script(
             if alias in state["props"]:
                 state["props"].pop(alias, None)
             attach_event({"type": "prop_hide", "alias": alias})
+            continue
+
+        # Hand props, parented to a bone of the character (Tecotec.CharaItem*Command), keyed by name:
+        #   [キャラ小物直接表示 <char> <HumanBodyBones> <prop> <key> pos rot scale]
+        #     (CharaItemBoneShowCommand.DoExecute, RVA 0x41316F8: ModelHandler.GetHumanBone(bone),
+        #     then ModelAttachItemHandler.Attach(item, AttachParentData), RVA 0x497A7EC:
+        #     SetParent(bone, false), localPosition = pos, localEulerAngles = rot, localScale = scale)
+        #   [キャラ小物表示 <char> <socket> <prop> <key>]: the same with a ModelSocketData asset
+        #     (bone path under the costume root + offsets, data_cache/item_sockets.json)
+        #   [キャラ小物非表示 <char> <key>]
+        if cmd in ("キャラ小物直接表示", "キャラ小物表示") and len(args) >= 4:
+            strings, vectors = split_mnemonic(args)
+            if len(strings) < 4:
+                continue
+            char_name, where, prop_id, key = strings[:4]
+            if cmd == "キャラ小物直接表示":
+                vec_or = lambda i, d: vectors[i] if len(vectors) > i and len(vectors[i]) == 3 else d
+                item = {"bone": where, "socketPath": None, "position": vec_or(0, [0.0, 0.0, 0.0]),
+                        "rotation": vec_or(1, [0.0, 0.0, 0.0]), "scale": vec_or(2, [1.0, 1.0, 1.0])}
+            else:
+                socket = ITEM_SOCKETS.get(where)
+                if socket is None:
+                    print(f"  [warn] {script_id}:{line_num}: socket {where} isn't in {ITEM_SOCKETS_PATH.name}")
+                item = socket and {"bone": None, "socketPath": socket["targetBone"], "position": socket["position"],
+                                   "rotation": socket["rotation"], "scale": socket["scale"]}
+            if char_name not in state["characters"]:
+                continue
+            held = state["characters"][char_name]["items"]
+            model = prop_model(prop_id) if item else None
+            if model is None:
+                # can't be placed: the key is emptied, not left with an older prop
+                if held.pop(key, None) is not None:
+                    attach_event({"type": "char_item", "character": char_name, "key": key, "id": None})
+                continue
+            held[key] = {"id": prop_id, "key": key, **model, **item}
+            attach_event({"type": "char_item", "character": char_name, "key": key, "id": prop_id})
+            continue
+
+        if cmd == "キャラ小物非表示" and len(args) >= 2:
+            char_name, key = args[0], args[1]
+            if char_name in state["characters"]:
+                state["characters"][char_name]["items"].pop(key, None)
+            attach_event({"type": "char_item", "character": char_name, "key": key, "id": None})
             continue
 
         # 3. Background Display & Movement: [背景表示 story_bg_image_049 0.00,2.00,50.00 1.50,1.50]
@@ -1346,7 +1426,8 @@ def build_asset_manifest(turns: list[dict[str, Any]]) -> dict[str, Any]:
                         "firstTurnIndex": idx,
                     }
 
-            for p in (snap.get("props") or {}).values():
+            hand_props = [i for c in (snap.get("characters") or {}).values() for i in (c.get("items") or {}).values()]
+            for p in [*(snap.get("props") or {}).values(), *hand_props]:
                 pid = p.get("id")
                 p_glb = p.get("glbUrl")
                 if pid and p_glb and pid not in props:

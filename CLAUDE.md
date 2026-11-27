@@ -279,7 +279,8 @@ Commands `scripts/build_scenarios.py` handles:
 
 - **Characters**: `キャラ表示` (name, costume, expression controller, pos, rot), `キャラ非表示`,
   `キャラ描画有効/無効`, `キャラ移動`, `キャラ向き変更`, `キャラ視線変更`, `キャラ表情変更`,
-  `キャラモーション再生 / 即時再生` (motion id), `顔紅潮操作`
+  `キャラモーション再生 / 即時再生` (motion id), `顔紅潮操作`, hand props
+  `キャラ小物直接表示 / 表示 / 非表示` (see "Props and hand props" below)
 - **Stage**: `3Dオブジェクト表示/非表示` (props), `背景表示/移動/回転`, `カメラ移動/回転`,
   `被写界深度開始/終了`, `プリセットポストエフェクト開始/終了`, `セピア…`, `モノクロ…`,
   fades `暗転_イン/アウト`, `ブラックアウト_…`, `円_…`
@@ -447,6 +448,33 @@ lip-sync on `Mouth_A…O`, plus an A/B mode (`Mouth_A`, `LipWeights [0, 40, 70]`
   `_SecondaryColor.a` on the face material (secondary texture `face_cheek_cry`) over 0.1–10 s.
   The shipped iOS UberToon programs never sample `_SecondaryTex`, so nothing is drawn (Android's
   shader is unchecked).
+
+### Props and hand props (`ItemShowCommand`, `Tecotec.CharaItem*Command`)
+
+- **The command's transform replaces the prefab root's own.** `[3Dオブジェクト表示 <prop> <alias>
+  pos scale rot]` → `StoryModelSpace.ItemShow` (RVA 0x4154308) sets the instance's
+  `localPosition` / `localScale` / `localEulerAngles`. 58 of our raw-data prop exports have a
+  non-identity root (`ppadv252_rurinoroom` stores (0.35, 0.88, −1.31) and its children undo it), so
+  the reader resets the root before placing a raw-data prop; composing them put Rurino's floor
+  0.88 m above the cast.
+- **Hand props** are parented to a bone of the character, by key:
+  - `[キャラ小物直接表示 <char> <HumanBodyBones> <prop> <key> pos rot scale]`
+    (`CharaItemBoneShowCommand.DoExecute`, RVA 0x41316F8): `ModelHandler.GetHumanBone(name)`, then
+    `ModelAttachItemHandler.Attach(item, AttachParentData)` (RVA 0x497A7EC): `SetParent(bone, false)`
+    and the local position / euler angles / scale. Every story body Avatar maps HumanBodyBones the
+    same way (`LeftHand` → `<Chr><Var>_LHand`, `HUMAN_BONE_SUFFIX` in `StageCanvas.tsx`).
+  - `[キャラ小物表示 <char> <socket> <prop> <key>]` (`CharaItemShowCommand`): a `Tecotec.ModelSocketData`
+    asset gives `TargetBone` (a transform path under the costume root, found with `Transform.Find`,
+    so another costume's path finds nothing and the item isn't shown) and the offsets.
+    `scripts/export_item_sockets.py` exports the ones the scripts use to `data_cache/item_sockets.json`.
+    Its `OverrideSettings` would set an Animator hand layer (`OverrideAnimation`, RVA 0x497A728),
+    but only with a `LayerName`, and that is empty in all 69.
+  - `[キャラ小物非表示 <char> <key>]` removes it.
+- `StoryMnemonic` keeps vector arguments (`x,y,z`) in a separate list from the strings, so stray
+  tokens (`… sayakasp  kahosp pos rot scale`) shift the strings but not pos/rot/scale
+  (`split_mnemonic` in `build_scenarios.py`).
+- Hand props are ordinary `ppadv` prop bundles, exported with `scripts/export_costume.py <id> --out
+  public/assets/3d/ppadv` (most use `Universal Render Pipeline/Unlit`: texture × `_BaseColor`).
 
 ### Look-at (`Tecotec.CharaLookCommand`, `ModelHandler.OnIKPass`)
 
