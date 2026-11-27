@@ -637,11 +637,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     charactersRef.current.clear();
     propsRef.current.clear();
 
+    // Clip planes from the game's StoryCamera prefab (resources.assets): near 0.3, far 1000. The
+    // near plane matters: some shots put the camera inside a character's head (104-ep7-part1
+    // line 34 sits in Kosuzu's), which the game clips away.
     const camera = new THREE.PerspectiveCamera(
       10.5,
       container.clientWidth / Math.max(1, container.clientHeight),
-      0.1,
-      200
+      0.3,
+      1000
     );
     camera.position.set(0, 0.1, 7.2);
     cameraRef.current = camera;
@@ -1253,6 +1256,17 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
             // layout (set pieces sit far from their parent) and mark what the prefab has inactive
             // or disabled; the repositioning below is only for hamproductions' "(Clone)" roots.
             const fromRawData = isGameCostume(clone);
+            if (fromRawData) {
+              // [3Dオブジェクト表示] replaces the spawned prefab root's transform with the command's
+              // (StoryModelSpace.ItemShow, RVA 0x4154308: set_localPosition / set_localScale /
+              // set_localEulerAngles on the root), so the root's own offset in the prefab is dropped
+              // (ppadv252_rurinoroom's root sits 0.88 m up; kept, the characters end up below its floor).
+              for (const root of clone.children) {
+                root.position.set(0, 0, 0);
+                root.quaternion.identity();
+                root.scale.set(1, 1, 1);
+              }
+            }
             clone.traverse((node: any) => {
               if (fromRawData) {
                 if (node.userData.active === false || node.userData.rendererEnabled === false) node.visible = false;
