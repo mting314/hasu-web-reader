@@ -64,9 +64,11 @@ which also runs ll-bot/ll-predictions; a dedicated project couldn't be created b
 account hit Google's project quota). **Private since 2026-11-25**: no public reads (the
 `allUsers` binding was removed), so plain `storage.googleapis.com` URLs return 403 and
 `npm run cache-assets` (`scripts/cache_episode_assets.py`) uses authenticated
-`gcloud storage cp`. The deployed site (GitHub Pages, `mting314.github.io/hasu-web-reader`)
-is meant to get short-lived signed URLs from a small Cloud Run signing service; that service
-isn't built yet, so local dev reads `public/assets/`. CORS GET/HEAD from `*` is still set.
+`gcloud storage cp`. The deployed site (GitHub Pages, `mting314.github.io/hasu-web-reader`, built by
+`.github/workflows/deploy-pages.yml`) gets short-lived V4 signed URLs via 302 redirects from
+the Cloud Run service `hasu-asset-signer` (`services/asset-signer/`,
+`https://hasu-asset-signer-278890546984.us-central1.run.app`), while local dev reads
+`public/assets/`. CORS GET/HEAD from `*` is still set.
 GLB/JSON are stored gzip-encoded; `.webm` is labelled `audio/webm`.
 `Cache-Control: public, max-age=3600` while models are still being re-exported; only switch to
 long/immutable caching with versioned paths.

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ChevronsLeft, ChevronsRight, Lock, Play, X } from "lucide-react";
-import { assetUrl } from "../remoteAssets";
+import { assetUrl, dataUrl } from "../remoteAssets";
 import { StoryIndex, StoryIndexSeries } from "../types/storyIndex";
 import type { EpisodeSummary } from "../types/scenario";
 import { EpisodeTimeline, PartTimeline } from "./EpisodeTimeline";
@@ -22,7 +22,7 @@ import { EpisodeTimeline, PartTimeline } from "./EpisodeTimeline";
 let indexPromise: Promise<StoryIndex> | null = null;
 function loadStoryIndex(): Promise<StoryIndex> {
   if (!indexPromise) {
-    indexPromise = fetch("/data/story_index.json").then((r) => {
+    indexPromise = fetch(dataUrl("story_index.json")).then((r) => {
       if (!r.ok) throw new Error(`story_index.json: HTTP ${r.status}`);
       return r.json() as Promise<StoryIndex>;
     });

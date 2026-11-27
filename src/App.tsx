@@ -35,7 +35,7 @@ import { JapaneseLookupText } from "./components/JapaneseLookupText";
 import { CreditsPanel } from "./components/CreditsPanel";
 import { StorySelector } from "./components/StorySelector";
 import { episodePartLabel, scriptIdFromSlug, slugForScriptId } from "./storySlug";
-import { rewriteAssetUrls } from "./remoteAssets";
+import { dataUrl, rewriteAssetUrls } from "./remoteAssets";
 
 /** Story from the URL: `?story=103-ep1-part1`, or a legacy `?script=10300101` link. */
 function scriptIdFromUrl(): string | null {
@@ -191,7 +191,7 @@ export default function App() {
 
   // Load episode catalog
   useEffect(() => {
-    fetch("/data/catalog.json")
+    fetch(dataUrl("catalog.json"))
       .then((r) => r.json())
       .then((raw: CatalogData) => {
         const d = rewriteAssetUrls(raw);
@@ -208,7 +208,7 @@ export default function App() {
     setAutoPlay(false);
     setFirstTurnReady(false);
     setScenarioLoadingSlug(slug);
-    fetch(`/data/scenarios/${slug}.json`)
+    fetch(dataUrl(`scenarios/${slug}.json`))
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();

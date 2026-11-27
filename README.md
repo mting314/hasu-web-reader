@@ -39,27 +39,28 @@ downloads JMdict into `data_cache/jmdict/` (~165 MB, git-ignored).
 | `data_cache/jmdict/` | dictionary download | `npm run build-scenarios` |
 | `data-inspect/`, `.inspect-tmp/` | raw game asset dumps, scratch space | local only |
 
-## Hosting assets on GCS
+## Hosting & deployment
 
 Processed assets are stored in the `gs://hasu-web-reader-assets` bucket (project
-`future-name-201021`; private, CORS for GET/HEAD). Browsers will reach it through signed URLs
-from a small signing service (not built yet); until then the app reads `public/assets/`.
+`future-name-201021`; private, CORS for GET/HEAD). Production builds on GitHub Pages
+(`https://mting314.github.io/hasu-web-reader/`, deployed by `.github/workflows/deploy-pages.yml`)
+point `VITE_ASSET_BASE_URL` at the Cloud Run V4 signed-URL redirect service in
+`services/asset-signer/` (`https://hasu-asset-signer-278890546984.us-central1.run.app`);
+local dev reads `public/assets/` unless overridden in `.env.local`.
 Upload a cached folder with paths mirrored:
 
 ```sh
 scripts/upload_assets_gcs.sh 3d          # GLB/JSON stored gzip-encoded
 ```
 
-Then point the app at the bucket in `.env.local` (git-ignored); only requests under the
-listed prefixes go remote:
+To test remote asset loading locally in `.env.local` (git-ignored):
 
 ```sh
-VITE_ASSET_BASE_URL=https://storage.googleapis.com/hasu-web-reader-assets
+VITE_ASSET_BASE_URL=https://hasu-asset-signer-278890546984.us-central1.run.app
 VITE_REMOTE_ASSET_PREFIXES=3d/           # empty = all assets
 ```
 
-`src/remoteAssets.ts` rewrites Three.js model/texture loads and JSON fetches; audio still
-loads from `public/assets/`.
+`src/remoteAssets.ts` rewrites scenario/catalog URLs, Three.js model/texture loads, and `fetch()` calls.
 
 ## Credits
 

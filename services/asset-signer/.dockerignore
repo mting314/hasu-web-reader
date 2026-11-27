@@ -1,0 +1,4 @@
+*.test.mjs
+deploy.sh
+env.yaml
+README.md

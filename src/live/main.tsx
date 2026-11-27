@@ -2,6 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import LiveViewer from "./LiveViewer";
 import "../index.css";
+import { installRemoteAssets } from "../remoteAssets";
+
+installRemoteAssets();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

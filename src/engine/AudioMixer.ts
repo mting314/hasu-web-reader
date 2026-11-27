@@ -598,7 +598,9 @@ export class AudioMixer {
   // -------------------------------------------------------------------------
 
   private createTrack(id: string, url: string, kind: SeTrack["kind"], scriptVol: number, startGain: number): SeTrack {
-    const el = new Audio(url);
+    const el = new Audio();
+    el.crossOrigin = "anonymous";
+    el.src = url;
     el.loop = kind === "bed";
     el.preload = "auto";
     const track: SeTrack = { el, id, kind, scriptVol, gain: startGain, fade: null };
