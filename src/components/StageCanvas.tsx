@@ -15,6 +15,18 @@ import { EmotionData, StoryEmotion } from "../engine/storyEmotion";
 import { FaceFlush } from "../engine/faceFlush";
 import { StoryLookAt } from "../engine/storyLookAt";
 import { AudioMixer } from "../engine/AudioMixer";
+import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
+
+/**
+ * A story command's Unity rotation (localEulerAngles in degrees, applied Z, then X, then Y) for a
+ * model exported with x mirrored (scripts/export_costume.py) in the reader's z-flipped world:
+ * S_z·R·S_x = Ry(180 - ry)·Rx(rx)·Rz(-rz), i.e. Euler (rx, 180 - ry, -rz) in YXZ order. For a pure
+ * yaw this is the familiar 180 - ry; rotation.y stays the yaw (storyLookAt reads it).
+ */
+function setUnityEuler(obj: THREE.Object3D, r: number[]) {
+  const d = THREE.MathUtils.degToRad;
+  obj.rotation.set(d(r[0]), d(180 - r[1]), d(-r[2]), "YXZ");
+}
 import {
   DEFAULT_BREATHING_WEIGHT,
   MotionHost,
@@ -1192,11 +1204,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       -cState.position[2]
     );
     // Unity Y=180 faces camera at -Z; in Three.js camera is at +Z so 180 - ry faces camera
-    loaded.rootGroup.rotation.set(
-      THREE.MathUtils.degToRad(cState.rotation[0]),
-      THREE.MathUtils.degToRad(180 - cState.rotation[1]),
-      THREE.MathUtils.degToRad(cState.rotation[2])
-    );
+    setUnityEuler(loaded.rootGroup, cState.rotation);
 
     // A change in the line's snapshot came from a command at the line's start: reading in order it
     // plays like the game (expression blend, blush fade, look-at transition); jumping applies it at once.
@@ -1251,25 +1259,27 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           group.name = `prop_${alias}`;
           for (const g of gltfs) {
             if (!g?.scene) continue;
-            const clone = g.scene.clone(true);
-            // Props exported from the raw data (scripts/export_costume.py) keep the prefab's own
-            // layout (set pieces sit far from their parent) and mark what the prefab has inactive
-            // or disabled; the repositioning below is only for hamproductions' "(Clone)" roots.
+            // SkeletonUtils.clone rebinds skinned meshes to the clone's own bones (a plain clone
+            // keeps the cached original's, so skinned props would ignore their transform)
+            const clone = SkeletonUtils.clone(g.scene);
+            // Props exported from the raw data (scripts/export_costume.py) are the prefab as the
+            // game spawns it (StoryModelSpace.ItemShow, RVA 0x4154308): the root is activated
+            // (SetActive(true)) and its local position / scale / angles are replaced by the
+            // command's, so the root's own offset in the prefab is dropped (ppadv252_rurinoroom's
+            // root sits 0.88 m up; kept, the characters end up below its floor). Below the root
+            // the prefab keeps its layout (set pieces sit far from their parent) and hides what
+            // it has inactive or disabled. The "(Clone)" repositioning is for hamproductions' files.
             const fromRawData = isGameCostume(clone);
-            if (fromRawData) {
-              // [3Dオブジェクト表示] replaces the spawned prefab root's transform with the command's
-              // (StoryModelSpace.ItemShow, RVA 0x4154308: set_localPosition / set_localScale /
-              // set_localEulerAngles on the root), so the root's own offset in the prefab is dropped
-              // (ppadv252_rurinoroom's root sits 0.88 m up; kept, the characters end up below its floor).
-              for (const root of clone.children) {
-                root.position.set(0, 0, 0);
-                root.quaternion.identity();
-                root.scale.set(1, 1, 1);
-              }
+            const roots = new Set<THREE.Object3D>(fromRawData ? clone.children : []);
+            for (const root of roots) {
+              root.position.set(0, 0, 0);
+              root.quaternion.identity();
+              root.scale.set(1, 1, 1);
             }
             clone.traverse((node: any) => {
               if (fromRawData) {
-                if (node.userData.active === false || node.userData.rendererEnabled === false) node.visible = false;
+                const inactive = node.userData.active === false && !roots.has(node);
+                if (inactive || node.userData.rendererEnabled === false) node.visible = false;
               } else if (
                 node.name &&
                 (node.name.endsWith("(Clone)") ||
@@ -1334,11 +1344,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         -pState.position[2]
       );
       loadedProp.group.scale.set(pState.scale[0], pState.scale[1], pState.scale[2]);
-      loadedProp.group.rotation.set(
-        THREE.MathUtils.degToRad(pState.rotation[0]),
-        THREE.MathUtils.degToRad(180 - pState.rotation[1]),
-        THREE.MathUtils.degToRad(pState.rotation[2])
-      );
+      setUnityEuler(loadedProp.group, pState.rotation);
     }
   };
 
@@ -1521,11 +1527,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           break;
         case "char_rotate":
           if (c && Array.isArray(ev.rotation)) {
-            c.rootGroup.rotation.set(
-              THREE.MathUtils.degToRad(ev.rotation[0]),
-              THREE.MathUtils.degToRad(180 - ev.rotation[1]),
-              THREE.MathUtils.degToRad(ev.rotation[2])
-            );
+            setUnityEuler(c.rootGroup, ev.rotation);
           }
           break;
         case "char_spawn":
