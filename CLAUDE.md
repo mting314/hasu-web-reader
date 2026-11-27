@@ -288,6 +288,18 @@ The compiled `public/data/scenarios/<slug>.json` has, per line, a full `stateBef
 snapshot (so any line can be jumped to), timed `intraEvents`, aligned translations, `tokensJp`
 (Japanese word segmentation, see `scripts/jp_lexer.py`), and a per-episode `lexicon`.
 
+Building: `npm run build-scenarios -- 103003 10400701` compiles those parts (8-digit script ids)
+or every part of a series (6-digit `AdvSeries` id); with no ids it rebuilds every part already in
+`public/data/catalog.json`. Catalog text comes from `public/data/story_index.json` (the game's
+AdvSeries/AdvDatas, `scripts/build_story_index.py`) with `EPISODE_OVERRIDES` for episode 1's
+hand-written English; new parts are merged into the catalog in story order. Translations are
+Hasu-KO's per-part pages (cached as `data_cache/hasuko_<lang>_<id>.html`; some bonus parts have
+none). Afterwards set the index's `available` flags to the compiled files (rerunning
+`build_story_index.py` also refreshes its Hasu-KO titles, a separate change). Assets must be in
+the store manifest first (export, upload, `scripts/update_store_manifest.sh`); props whose
+hamproductions index entry isn't complete in the store use our self-contained export. The files
+are ~2 MB each (gzip ~150 KB); two thirds are the per-line `stateBefore`/`stateAfter` snapshots.
+
 ## Working with the raw data
 
 **Python tooling is uv.** `pyproject.toml` pins `UnityPy==1.25.4` and numpy (the `data`

@@ -294,6 +294,20 @@ def bgm_source(bgm_id: str, script_id: str) -> tuple[str, list[float] | None, st
     return asset_url(mp3_rel, script_id), None, None
 
 
+def hamproductions_prop_complete(pinfo: dict[str, Any]) -> bool:
+    """Whether the store holds a hamproductions prop as their index describes it (main GLB, extra
+    GLBs, texture-map files). Only a few early props are; the others are our exports from the raw
+    data, written to the index's main path but self-contained."""
+    tex_dir = pinfo.get("textureDir") or ""
+    if tex_dir and not tex_dir.endswith("/"):
+        tex_dir += "/"
+    files = [pinfo["glbPath"], *(pinfo.get("extraGlbs") or [])]
+    for entry in (pinfo.get("textureMap") or {}).values():
+        if isinstance(entry, dict):
+            files += [f"{tex_dir}{t}" for t in entry.values() if isinstance(t, str)]
+    return all(asset_in_store(f"3d/{f}") for f in files)
+
+
 def asset_available(rel_path: str) -> bool:
     local_file = PUBLIC_ASSETS_DIR / rel_path
     return local_file.exists() and local_file.stat().st_size > 0
@@ -585,7 +599,9 @@ def compile_script(
             char_prefix = cmeta["en"][:3].lower()
             eye_tex = None
             for t in asset_info.get("textures") or []:
-                if f"{char_prefix}_eye" in t.lower():
+                # only old hamproductions GLBs use it; costumes re-exported by export_costume.py
+                # embed every texture, so a missing one isn't a gap
+                if f"{char_prefix}_eye" in t.lower() and asset_in_store(f"3d/{tex_dir}{t}"):
                     eye_tex = asset_url(f"3d/{tex_dir}{t}", script_id)
                     break
 
@@ -661,14 +677,20 @@ def compile_script(
             mode = args[1]
             val: float | list[float] | str = 0.0
             dur = 0.0
+            number = r"^-?(\d+(\.\d*)?|\.\d+)$"
             if len(args) >= 3:
                 if "," in args[2]:
                     val = parse_vec(args[2], [0.0, 0.0, 0.0])
-                elif re.match(r"^-?[\d.]+$", args[2]):
+                elif re.match(number, args[2]):
                     val = float(args[2])
+                elif mode in ("向き指定", "角度指定"):
+                    # a malformed number in the script (10301205: `向き指定 0.3.5 0.7`); what the game
+                    # does with it isn't known, so the command is left out
+                    print(f"[WARN] {script_id}:{line_num} {cmd} {mode}: not a number {args[2]!r}, skipped")
+                    continue
                 else:
                     val = args[2]
-            if len(args) >= 4 and re.match(r"^-?[\d.]+$", args[3]):
+            if len(args) >= 4 and re.match(number, args[3]):
                 dur = float(args[3])
             elif (
                 len(args) == 3
@@ -770,6 +792,10 @@ def compile_script(
             # props missing from hamproductions' index (ppadv006_pamphlet) are exported from the raw
             # data by scripts/export_costume.py to the same layout: ppadv/<id>/<id>.glb
             pinfo = assets_by_id.get(prop_id) or {}
+            if pinfo and not hamproductions_prop_complete(pinfo):
+                # our export from the raw data: one self-contained GLB at the same path, with none of
+                # the index's extra GLBs or texture map
+                pinfo = {}
             glb_rel = f"3d/{pinfo.get('glbPath', f'ppadv/{prop_id}/{prop_id}.glb')}"
             if not asset_in_store(glb_rel):
                 # No model for this prop in our store: leave it off the stage rather than
@@ -1299,27 +1325,10 @@ def build_asset_manifest(turns: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    scenarios_dir = PUBLIC_DATA_DIR / "scenarios"
-    scenarios_dir.mkdir(parents=True, exist_ok=True)
-
-    model_ctx = json.loads((DATA_CACHE_DIR / "model_viewer_context.json").read_text(encoding="utf-8"))
-    assets_by_id = {a["id"]: a for a in model_ctx["data"]["assets"]}
-
-    motions_meta_path = PUBLIC_ASSETS_DIR / "3d/metadata/motions.json"
-    if not motions_meta_path.exists():
-        motions_meta_path = DATA_CACHE_DIR / "motions_meta.json"
-    motions_list = json.loads(motions_meta_path.read_text(encoding="utf-8")) if motions_meta_path.exists() else []
-    if isinstance(motions_list, dict):
-        motions_list = (motions_list.get("data") or {}).get("motions") or motions_list.get("motions") or []
-    motions_meta_by_id = {m["id"]: m for m in motions_list if isinstance(m, dict) and "id" in m}
-
-    bgm_map_path = HASU_DUB_DIR / "bgm_map.json"
-    bgm_map_raw = json.loads(bgm_map_path.read_text(encoding="utf-8")) if bgm_map_path.exists() else {}
-    bgm_map = bgm_map_raw.get("ep1_part1_required", {})
-
-    sample_episodes = [
+# Hand-written catalog text for the first parts (kept over the story index's wording).
+EPISODE_OVERRIDES: dict[str, dict[str, str]] = {
+    e["scriptId"]: e
+    for e in [
         {
             "scriptId": "10300101",
             "seriesId": "103001",
@@ -1345,16 +1354,105 @@ def main() -> None:
             "descriptionEn": "Despairing over the strict dorm rules, Kaho attempts a 'jailbreak' and encounters Kozue Otomune practicing as a school idol.",
         },
     ]
+}
+STORY_INDEX_PATH = PUBLIC_DATA_DIR / "story_index.json"
+
+
+def ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def episode_metadata(script_ids: list[str]) -> dict[str, dict[str, str]]:
+    """Catalog metadata per script from the story index (the game's AdvSeries / AdvDatas tables,
+    scripts/build_story_index.py), with EPISODE_OVERRIDES on top."""
+    index = json.loads(STORY_INDEX_PATH.read_text(encoding="utf-8")) if STORY_INDEX_PATH.exists() else {"series": []}
+    parts = {p["scriptId"]: (s, p) for s in index["series"] for p in s["parts"]}
+    out = {}
+    for sid in script_ids:
+        meta = {"scriptId": sid, "seriesId": sid[:6]}
+        if sid in parts:
+            s, p = parts[sid]
+            term = re.match(r"(\d+)", s.get("yearText") or "")
+            meta.update({
+                "seriesId": str(s["id"]),
+                "term": f"{ordinal(int(term.group(1)))} Term ({s['fiscalYear']})" if term else (s.get("yearText") or ""),
+                "month": s.get("monthText") or "",
+                "seriesTitleJp": s.get("title") or "",
+                "seriesTitleEn": s.get("titleEn") or s.get("title") or "",
+                "partTitleJp": p.get("label") or "",
+                "partTitleEn": p.get("titleEn") or p.get("label") or "",
+                "descriptionJp": s.get("description") or "",
+                "descriptionEn": s.get("descriptionEn") or "",
+            })
+        else:
+            print(f"[WARN] {sid} isn't in {STORY_INDEX_PATH.name}: catalog text left empty")
+        meta.update(EPISODE_OVERRIDES.get(sid, {}))
+        out[sid] = meta
+    return out
+
+
+def resolve_script_ids(ids: list[str], catalog_path: Path) -> list[str]:
+    """8-digit script ids as given, 6-digit series ids expanded to every part with a script; none
+    = every part the catalog already has (rebuild what's compiled)."""
+    if not ids:
+        if catalog_path.exists():
+            return [e["scriptId"] for e in json.loads(catalog_path.read_text(encoding="utf-8"))["episodes"]]
+        return list(EPISODE_OVERRIDES)
+    out: list[str] = []
+    for i in ids:
+        if re.fullmatch(r"\d{6}", i):
+            out += sorted(p.stem.split("_")[-1] for p in (HASU_DUB_DIR / "story_main_txt").glob(f"story_main_{i}??.txt"))
+        elif re.fullmatch(r"\d{8}", i):
+            out.append(i)
+        else:
+            raise SystemExit(f"not a script id (8 digits) or series id (6 digits): {i}")
+    return list(dict.fromkeys(out))
+
+
+def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Compile story scripts into the reader's scenario JSON.")
+    ap.add_argument("ids", nargs="*", help="script ids (10300101) or series ids (103001); "
+                    "none = rebuild every part already in the catalog")
+    args = ap.parse_args()
+    PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    scenarios_dir = PUBLIC_DATA_DIR / "scenarios"
+    scenarios_dir.mkdir(parents=True, exist_ok=True)
+
+    model_ctx = json.loads((DATA_CACHE_DIR / "model_viewer_context.json").read_text(encoding="utf-8"))
+    assets_by_id = {a["id"]: a for a in model_ctx["data"]["assets"]}
+
+    motions_meta_path = PUBLIC_ASSETS_DIR / "3d/metadata/motions.json"
+    if not motions_meta_path.exists():
+        motions_meta_path = DATA_CACHE_DIR / "motions_meta.json"
+    motions_list = json.loads(motions_meta_path.read_text(encoding="utf-8")) if motions_meta_path.exists() else []
+    if isinstance(motions_list, dict):
+        motions_list = (motions_list.get("data") or {}).get("motions") or motions_list.get("motions") or []
+    motions_meta_by_id = {m["id"]: m for m in motions_list if isinstance(m, dict) and "id" in m}
+
+    bgm_map_path = HASU_DUB_DIR / "bgm_map.json"
+    bgm_map_raw = json.loads(bgm_map_path.read_text(encoding="utf-8")) if bgm_map_path.exists() else {}
+    bgm_map = bgm_map_raw.get("ep1_part1_required", {})
 
     lexer = load_lexer()
 
+    catalog_path = PUBLIC_DATA_DIR / "catalog.json"
+    script_ids = resolve_script_ids(args.ids, catalog_path)
+    metadata = episode_metadata(script_ids)
     catalog_entries = []
-    for ep in sample_episodes:
-        sid = ep["scriptId"]
+    failed: list[str] = []
+    for sid in script_ids:
+        ep = metadata[sid]
         slug = slug_for_script_id(sid)
         ep = {"slug": slug, **ep}
         print(f"Compiling scenario {slug} ({sid}: {ep['seriesTitleEn']} - {ep['partTitleEn']})...")
-        compiled = compile_script(sid, ep, assets_by_id, motions_meta_by_id, bgm_map, lexer)
+        try:
+            compiled = compile_script(sid, ep, assets_by_id, motions_meta_by_id, bgm_map, lexer)
+        except Exception as e:  # noqa: BLE001 - report it and build the other parts
+            print(f"  [FAIL] {slug}: {e!r}")
+            failed.append(sid)
+            continue
         compiled = {"slug": slug, **compiled}
         out_path = scenarios_dir / f"{slug}.json"
         out_path.write_text(json.dumps(compiled, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -1381,8 +1479,16 @@ def main() -> None:
             ),
         })
 
-    catalog_path = PUBLIC_DATA_DIR / "catalog.json"
-    catalog_path.write_text(json.dumps({"episodes": catalog_entries}, ensure_ascii=False, indent=2), encoding="utf-8")
+    # merge with the parts compiled earlier, in story order (the index's series and part order)
+    previous = json.loads(catalog_path.read_text(encoding="utf-8"))["episodes"] if catalog_path.exists() else []
+    merged = {e["scriptId"]: e for e in previous}
+    merged.update({e["scriptId"]: e for e in catalog_entries})
+    index = json.loads(STORY_INDEX_PATH.read_text(encoding="utf-8")) if STORY_INDEX_PATH.exists() else {"series": []}
+    order = {p["scriptId"]: i for i, p in enumerate(p for se in index["series"] for p in se["parts"])}
+    episodes = sorted(merged.values(), key=lambda e: (order.get(e["scriptId"], len(order)), e["scriptId"]))
+    catalog_path.write_text(json.dumps({"episodes": episodes}, ensure_ascii=False, indent=2), encoding="utf-8")
+    if failed:
+        print(f"[WARN] {len(failed)} part(s) failed to compile: {' '.join(failed)}")
     print(f"Wrote catalog to {catalog_path.relative_to(ROOT_DIR)}")
 
     if MISSING_ASSETS:
