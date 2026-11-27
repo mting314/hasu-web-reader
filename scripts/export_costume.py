@@ -45,6 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INDEX = ROOT / ".inspect-tmp" / "ios_index.jsonl"
 DEFAULT_OUT = ROOT / "public" / "assets" / "3d" / "costume"
 MIRROR = np.diag([-1.0, 1.0, 1.0, 1.0])
+BUILTIN_QUAD = 10210  # Unity's Quad in `Library/unity default resources`
 DATA_TEXTURE_HINTS = ("controlmap", "mask", "normal", "gloss", "matcap", "_nml", "_ctrl")
 
 
@@ -214,18 +215,28 @@ class CostumeExporter:
         tt = obj.read_typetree()
         shader_obj = self.resolve(obj.assets_file, tt["m_Shader"])
         shader = shader_obj.read_typetree()["m_ParsedForm"]["m_Name"] if shader_obj is not None else None
+        if shader is None and tt["m_Shader"]["m_FileID"]:
+            # a shader outside the bundles, e.g. Unity's built-in resources (some props' materials
+            # use unity_builtin_extra 10752); keep the reference
+            ext = obj.assets_file.externals[tt["m_Shader"]["m_FileID"] - 1].path.split("/")[-1]
+            shader = f"{ext}:{tt['m_Shader']['m_PathID']}"
         props = tt["m_SavedProperties"]
         textures = {}
         for slot, env in props["m_TexEnvs"]:
             ti = self.texture(obj.assets_file, env["m_Texture"])
             if ti is not None:
                 textures[slot] = {"index": ti, "scale": vec(env["m_Scale"], "xy"), "offset": vec(env["m_Offset"], "xy")}
+        def num(v) -> float | str:
+            # JSON has no inf/NaN; some materials store them (e.g. URP's _CameraFadeParams far = inf)
+            v = float(v)
+            return v if np.isfinite(v) else ("NaN" if np.isnan(v) else ("Infinity" if v > 0 else "-Infinity"))
+
         unity = {
             "shader": shader,
             "keywords": tt.get("m_ValidKeywords") or (tt.get("m_ShaderKeywords") or "").split(),
             "renderQueue": tt.get("m_CustomRenderQueue", -1),
-            "floats": {k: float(v) for k, v in props["m_Floats"]},
-            "colors": {k: [float(v["r"]), float(v["g"]), float(v["b"]), float(v["a"])] for k, v in props["m_Colors"]},
+            "floats": {k: num(v) for k, v in props["m_Floats"]},
+            "colors": {k: [num(v["r"]), num(v["g"]), num(v["b"]), num(v["a"])] for k, v in props["m_Colors"]},
             "textures": textures,
         }
         mat = {"name": tt["m_Name"], "extras": {"unity": unity}}
@@ -243,16 +254,47 @@ class CostumeExporter:
             if obj.type.name in ("SkinnedMeshRenderer", "MeshRenderer") and obj.assets_file.parent.name == self.costume_file:
                 yield obj
 
-    def mesh_of(self, robj, tt):
-        """A SkinnedMeshRenderer holds its mesh; a MeshRenderer draws its GameObject's MeshFilter's."""
+    def mesh_pptr(self, robj, tt):
+        """A SkinnedMeshRenderer holds its mesh; a MeshRenderer draws its GameObject's MeshFilter's.
+        Returns (assets file the PPtr is relative to, PPtr)."""
         if "m_Mesh" in tt:
-            return self.resolve(robj.assets_file, tt["m_Mesh"])
+            return robj.assets_file, tt["m_Mesh"]
         go = robj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
         for c in go["m_Component"]:
             comp = self.resolve(robj.assets_file, c["component"])
             if comp is not None and comp.type.name == "MeshFilter":
-                return self.resolve(comp.assets_file, comp.read_typetree()["m_Mesh"])
-        return None
+                return comp.assets_file, comp.read_typetree()["m_Mesh"]
+        return None, None
+
+    def is_builtin_quad(self, assets_file, pptr) -> bool:
+        """Picture-board props draw Unity's built-in Quad (`unity default resources` 10210), which
+        is in no bundle (checked: the boards' x/y scale matches their texture's aspect)."""
+        if assets_file is None or not pptr or not pptr["m_FileID"]:
+            return False
+        ext = assets_file.externals[pptr["m_FileID"] - 1].path
+        return ext.endswith("unity default resources") and pptr["m_PathID"] == BUILTIN_QUAD
+
+    def add_builtin_quad(self, tt, robj, node_idx: int) -> None:
+        """Unity's Quad: 1 x 1 in the XY plane, centred, facing -Z, uv 0..1, triangles 0 3 1 3 0 2;
+        converted like every mesh (x mirrored, v flipped, winding reversed)."""
+        pos = np.array([[-0.5, -0.5, 0], [0.5, -0.5, 0], [-0.5, 0.5, 0], [0.5, 0.5, 0]]) * [-1, 1, 1]
+        uv = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float64)
+        uv[:, 1] = 1.0 - uv[:, 1]
+        attrs = {"POSITION": self.glb.accessor(pos, "VEC3", minmax=True),
+                 "NORMAL": self.glb.accessor(np.tile([0.0, 0.0, -1.0], (4, 1)), "VEC3"),
+                 "TEXCOORD_0": self.glb.accessor(uv, "VEC2")}
+        tri = np.array([[0, 3, 1], [3, 0, 2]])[:, [0, 2, 1]]
+        prim = {"attributes": attrs, "indices": self.glb.accessor(tri.reshape(-1), "SCALAR", ctype=5125)}
+        if tt["m_Materials"]:
+            mi = self.material(robj.assets_file, tt["m_Materials"][0])
+            if mi is not None:
+                prim["material"] = mi
+        g = self.glb.gltf
+        g["meshes"].append({"name": "Quad", "primitives": [prim]})
+        node = g["nodes"][node_idx]
+        node["mesh"] = len(g["meshes"]) - 1
+        if not tt.get("m_Enabled", 1):
+            node.setdefault("extras", {})["rendererEnabled"] = False
 
     def add_renderer(self, robj) -> None:
         tt = robj.read_typetree()
@@ -260,7 +302,11 @@ class CostumeExporter:
         go = go_obj.read_typetree()
         tr_pptr = next(c["component"] for c in go["m_Component"] if self.resolve(robj.assets_file, c["component"]).type.name == "Transform")
         node_idx = self.node_of.get((robj.assets_file.name, tr_pptr["m_PathID"]))
-        mesh_obj = self.mesh_of(robj, tt)
+        mesh_file, mesh_pptr = self.mesh_pptr(robj, tt)
+        mesh_obj = self.resolve(mesh_file, mesh_pptr) if mesh_pptr else None
+        if node_idx is not None and mesh_obj is None and self.is_builtin_quad(mesh_file, mesh_pptr):
+            self.add_builtin_quad(tt, robj, node_idx)
+            return
         if node_idx is None or mesh_obj is None:
             print(f"  [skip] renderer on {go['m_Name']}: no node/mesh")
             return
