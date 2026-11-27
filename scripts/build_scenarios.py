@@ -346,13 +346,14 @@ BACKGROUND_SIZES: dict[str, list[float]] = (
 STANDARD_BG_SIZE = (19.4, 11.0)
 
 
-def background_size(bg_id: str) -> list[float]:
+def background_size(bg_id: str, script_id: str) -> list[float]:
     """World size [w, h] in metres of a background sprite at scale 1."""
     if bg_id in BACKGROUND_SIZES:
         w, h, ppu = BACKGROUND_SIZES[bg_id]
         return [round(w / ppu, 4), round(h / ppu, 4)]
     if bg_id != "story_bg_image_000":
-        MISSING_ASSETS.setdefault(f"data_cache/background_sizes.json:{bg_id}", "(size)")
+        print(f"[WARN] {script_id}: no size for {bg_id} in {BACKGROUND_SIZES_PATH.name} "
+              "(export_backgrounds.py records it); using the standard 19.4 x 11.0 m")
     return list(STANDARD_BG_SIZE)
 
 
@@ -481,6 +482,7 @@ def compile_script(
         return copy.deepcopy({
             "camera.position": s["camera"]["position"],
             "camera.rotation": s["camera"]["rotation"],
+            "camera.fov": s["camera"]["fov"],
             "background.position": s["background"]["position"],
             "fade": s["fade"],
             **{f"characters.{n}.position": c["position"] for n, c in s["characters"].items()},
@@ -492,6 +494,8 @@ def compile_script(
             return "camera.position"
         if t == "camera_rotate":
             return "camera.rotation"
+        if t == "camera_zoom":
+            return "camera.fov"
         if t == "bg_move":
             return "background.position"
         if t == "fade":
@@ -891,7 +895,7 @@ def compile_script(
             bg_url = None if bg_id == "story_bg_image_000" else asset_url(f"story/backgrounds/{bg_id}.webp", script_id)
             state["background"]["bgId"] = bg_id
             state["background"]["url"] = bg_url
-            size = background_size(bg_id)
+            size = background_size(bg_id, script_id)
             state["background"]["position"] = pos
             state["background"]["scale"] = scale
             state["background"]["size"] = size
@@ -913,13 +917,20 @@ def compile_script(
             attach_event({"type": "bg_rotate", "rotation": rot})
             continue
 
-        # Camera zoom: [カメラズーム 40] tweens the story camera's field of view
-        # (CameraZoomCommand.DoZoom, RVA 0x41308DC: Camera.DOFieldOfView); optional duration
-        if cmd == "カメラズーム" and args and re.match(r"^[\d.]+$", args[0]):
+        # Camera zoom: [カメラズーム fov [sec [ease]]] tweens the story camera's field of view
+        # (CameraZoomCommand.DoZoom, RVA 0x41308DC: Camera.DOFieldOfView). TweenEase
+        # (RVA 0x413065C) maps argument 2: 1 -> Linear, 0 / missing -> OutQuad, else Unset
+        # (DOTween's default, OutQuad).
+        number = r"^(\d+(\.\d*)?|\.\d+)$"
+        if cmd == "カメラズーム" and args:
+            if not re.match(number, args[0]) or (len(args) >= 2 and not re.match(number, args[1])):
+                print(f"[WARN] {script_id}:{line_num} {cmd}: not a number in {args!r}, skipped")
+                continue
             fov = float(args[0])
-            dur = float(args[1]) if len(args) >= 2 and re.match(r"^[\d.]+$", args[1]) else 0.0
+            dur = float(args[1]) if len(args) >= 2 else 0.0
+            ease = "linear" if len(args) >= 3 and re.match(number, args[2]) and int(float(args[2])) == 1 else "outQuad"
             state["camera"]["fov"] = fov
-            attach_event({"type": "camera_zoom", "fov": fov, "duration": dur})
+            attach_event({"type": "camera_zoom", "fov": fov, "duration": dur, "ease": ease})
             continue
 
         # 4. Camera Movement & Rotation: [カメラ移動 0.00,4.96,-10.00 12.35 1]

@@ -17,21 +17,6 @@ import { StoryLookAt } from "../engine/storyLookAt";
 import { AudioMixer } from "../engine/AudioMixer";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 
-/**
- * A story command's Unity rotation (localEulerAngles in degrees, applied Z, then X, then Y) for a
- * model exported with x mirrored (scripts/export_costume.py) in the reader's z-flipped world:
- * S_z·R·S_x = Ry(180 - ry)·Rx(rx)·Rz(-rz), i.e. Euler (rx, 180 - ry, -rz) in YXZ order. For a pure
- * yaw this is the familiar 180 - ry; rotation.y stays the yaw (storyLookAt reads it).
- */
-/** The game's StoryCamera prefab: vertical field of view 10 (only [カメラズーム] changes it). */
-const STORY_CAMERA_FOV = 10;
-/** A standard background sprite, 1940x1100 at 100 pixels per unit, for scenarios without sizes. */
-const STANDARD_BG_SIZE: [number, number] = [19.4, 11.0];
-
-function setUnityEuler(obj: THREE.Object3D, r: number[]) {
-  const d = THREE.MathUtils.degToRad;
-  obj.rotation.set(d(r[0]), d(180 - r[1]), d(-r[2]), "YXZ");
-}
 import {
   DEFAULT_BREATHING_WEIGHT,
   MotionHost,
@@ -54,6 +39,26 @@ import {
   StageResolution,
   StageSnapshot,
 } from "../types/scenario";
+
+/** The game's StoryCamera prefab: vertical field of view 10 (only [カメラズーム] changes it). */
+const STORY_CAMERA_FOV = 10;
+/**
+ * Scenarios built before backgrounds carried their size (and camera.fov was an unused 25) are
+ * shown as they were then: a 19.2 x 10.8 m background quad and a 10.5 degree camera.
+ */
+const LEGACY_BG_SIZE: [number, number] = [19.2, 10.8];
+const LEGACY_CAMERA_FOV = 10.5;
+
+/**
+ * A story command's Unity rotation (localEulerAngles in degrees, applied Z, then X, then Y) for a
+ * model exported with x mirrored (scripts/export_costume.py) in the reader's z-flipped world:
+ * S_z·R·S_x = Ry(180 - ry)·Rx(rx)·Rz(-rz), i.e. Euler (rx, 180 - ry, -rz) in YXZ order. For a pure
+ * yaw this is the familiar 180 - ry; rotation.y stays the yaw (storyLookAt reads it).
+ */
+function setUnityEuler(obj: THREE.Object3D, r: number[]) {
+  const d = THREE.MathUtils.degToRad;
+  obj.rotation.set(d(r[0]), d(180 - r[1]), d(-r[2]), "YXZ");
+}
 
 export interface StageLoadProgress {
   done: number;
@@ -632,7 +637,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
   const camAnimStartRef = useRef(0);
   const camAnimDurRef = useRef(0);
   // [カメラズーム] field-of-view tween (CameraZoomCommand.DoZoom -> Camera.DOFieldOfView)
-  const camFovRef = useRef({ from: STORY_CAMERA_FOV, to: STORY_CAMERA_FOV, start: 0, dur: 0 });
+  const camFovRef = useRef({ from: STORY_CAMERA_FOV, to: STORY_CAMERA_FOV, start: 0, dur: 0, linear: false });
 
   const bgFromPosRef = useRef(new THREE.Vector3(0, 0, -50));
   const bgToPosRef = useRef(new THREE.Vector3(0, 0, -50));
@@ -730,7 +735,8 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       const fovTween = camFovRef.current;
       if (camera.fov !== fovTween.to) {
         const k = fovTween.dur <= 0.001 ? 1 : Math.min(1, (now - fovTween.start) / fovTween.dur);
-        camera.fov = k >= 1 ? fovTween.to : fovTween.from + (fovTween.to - fovTween.from) * k;
+        const eased = fovTween.linear ? k : 1 - (1 - k) * (1 - k); // DOTween OutQuad
+        camera.fov = k >= 1 ? fovTween.to : fovTween.from + (fovTween.to - fovTween.from) * eased;
         camera.updateProjectionMatrix();
       }
 
@@ -1003,11 +1009,15 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     }
   };
 
-  // Set the story camera's field of view, at once or over `durationSec` ([カメラズーム])
-  const applyCameraFov = (fov: number, durationSec: number) => {
+  // Set the story camera's field of view, at once or over `durationSec` ([カメラズーム]: OutQuad
+  // unless the command asks for linear)
+  const applyCameraFov = (fov: number, durationSec: number, ease?: string) => {
     const camera = cameraRef.current;
     if (!camera) return;
-    camFovRef.current = { from: camera.fov, to: fov, start: stageNowSecRef.current, dur: durationSec };
+    const t = camFovRef.current;
+    // a line's snapshot already holds the zoom's target: let a zoom still running finish
+    if (durationSec <= 0.001 && t.to === fov && stageNowSecRef.current < t.start + t.dur) return;
+    camFovRef.current = { from: camera.fov, to: fov, start: stageNowSecRef.current, dur: durationSec, linear: ease === "linear" };
     if (durationSec <= 0.001 && camera.fov !== fov) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
@@ -1048,7 +1058,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
     scale: [number, number],
     rot: [number, number, number],
     durationSec = 0,
-    size: [number, number] = STANDARD_BG_SIZE
+    size: [number, number] = LEGACY_BG_SIZE
   ) => {
     if (!bgMeshRef.current || !bgMatRef.current) return;
     if (bgUrl !== currentBgUrlRef.current || (bgUrl && !bgMatRef.current.map)) {
@@ -1417,7 +1427,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
       0,
       snap.background.size
     );
-    applyCameraFov(snap.camera.fov ?? STORY_CAMERA_FOV, 0);
+    applyCameraFov(snap.background.size ? snap.camera.fov : LEGACY_CAMERA_FOV, 0);
 
     // 2. Camera & Fade
     let initialCamDur = 0;
@@ -1585,7 +1595,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           }
           break;
         case "camera_zoom":
-          applyCameraFov(Number(ev.fov) || STORY_CAMERA_FOV, Number(ev.duration || 0));
+          applyCameraFov(Number(ev.fov) || STORY_CAMERA_FOV, Number(ev.duration || 0), ev.ease);
           break;
         case "camera_move":
         case "camera_rotate":
