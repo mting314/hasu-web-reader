@@ -684,8 +684,11 @@ def compile_script(
                 elif re.match(number, args[2]):
                     val = float(args[2])
                 elif mode in ("向き指定", "角度指定"):
-                    # a malformed number in the script (10301205: `向き指定 0.3.5 0.7`); what the game
-                    # does with it isn't known, so the command is left out
+                    # A malformed number in the script (10301205: `向き指定 0.3.5 0.7`). The game
+                    # reads it with Operands.GetRValue (RVA 0x4146280), which only indexes the
+                    # pre-parsed StoryMnemonic.operands.rValues (0 if the index is past the end);
+                    # the text-to-operand parser isn't in the client dump, so what this becomes in
+                    # the game is unknown, and the command is left out rather than guessed.
                     print(f"[WARN] {script_id}:{line_num} {cmd} {mode}: not a number {args[2]!r}, skipped")
                     continue
                 else:
@@ -1369,7 +1372,8 @@ def episode_metadata(script_ids: list[str]) -> dict[str, dict[str, str]]:
     parts = {p["scriptId"]: (s, p) for s in index["series"] for p in s["parts"]}
     out = {}
     for sid in script_ids:
-        meta = {"scriptId": sid, "seriesId": sid[:6]}
+        meta = {"scriptId": sid, "seriesId": sid[:6], "term": "", "month": "", "seriesTitleJp": "",
+                "seriesTitleEn": sid, "partTitleJp": "", "partTitleEn": "", "descriptionJp": "", "descriptionEn": ""}
         if sid in parts:
             s, p = parts[sid]
             term = re.match(r"(\d+)", s.get("yearText") or "")
@@ -1498,6 +1502,8 @@ def main() -> None:
         )
         for rel, sid in sorted(MISSING_ASSETS.items()):
             print(f"  {sid}  {rel}")
+    if failed:
+        sys.exit(1)  # the catalog is written, but a part didn't compile
 
 
 if __name__ == "__main__":

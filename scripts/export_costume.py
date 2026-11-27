@@ -226,19 +226,34 @@ class CostumeExporter:
             ti = self.texture(obj.assets_file, env["m_Texture"])
             if ti is not None:
                 textures[slot] = {"index": ti, "scale": vec(env["m_Scale"], "xy"), "offset": vec(env["m_Offset"], "xy")}
-        def num(v) -> float | str:
-            # JSON has no inf/NaN; some materials store them (e.g. URP's _CameraFadeParams far = inf)
-            v = float(v)
-            return v if np.isfinite(v) else ("NaN" if np.isnan(v) else ("Infinity" if v > 0 else "-Infinity"))
+        # JSON has no inf/NaN, and the reader types floats/colors as numbers; the few properties
+        # holding them (URP's _CameraFadeParams far = inf on some props) go to `nonFinite` as text
+        def text(v: float) -> str:
+            return "NaN" if np.isnan(v) else ("Infinity" if v > 0 else "-Infinity")
 
+        floats, colors, non_finite = {}, {}, {}
+        for k, v in props["m_Floats"]:
+            v = float(v)
+            if np.isfinite(v):
+                floats[k] = v
+            else:
+                non_finite[k] = text(v)
+        for k, v in props["m_Colors"]:
+            c = [float(v["r"]), float(v["g"]), float(v["b"]), float(v["a"])]
+            if all(np.isfinite(c)):
+                colors[k] = c
+            else:
+                non_finite[k] = [x if np.isfinite(x) else text(x) for x in c]
         unity = {
             "shader": shader,
             "keywords": tt.get("m_ValidKeywords") or (tt.get("m_ShaderKeywords") or "").split(),
             "renderQueue": tt.get("m_CustomRenderQueue", -1),
-            "floats": {k: num(v) for k, v in props["m_Floats"]},
-            "colors": {k: [num(v["r"]), num(v["g"]), num(v["b"]), num(v["a"])] for k, v in props["m_Colors"]},
+            "floats": floats,
+            "colors": colors,
             "textures": textures,
         }
+        if non_finite:
+            unity["nonFinite"] = non_finite
         mat = {"name": tt["m_Name"], "extras": {"unity": unity}}
         main = textures.get("_MainTex") or textures.get("_MainTexture")
         if main:
@@ -472,9 +487,20 @@ def main() -> None:
     ap.add_argument("costumes", nargs="+")
     ap.add_argument("--index", default=str(DEFAULT_INDEX))
     ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--replace", action="store_true",
+                    help="write into a folder that holds hamproductions' GLBs (their extra GLBs stay; "
+                         "see CLAUDE.md before using this for a prop)")
     args = ap.parse_args()
     index = UA.BundleIndex(args.index)
     for cid in args.costumes:
+        # A few early props are hamproductions files (main GLB + extra GLBs + textures) that the
+        # build uses as their index describes while every file is in the store. Writing our
+        # self-contained GLB over their main file would make the reader load both.
+        others = [p.name for p in (Path(args.out) / cid).glob("*.glb") if p.name != f"{cid}.glb"]
+        if others and not args.replace:
+            print(f"[skip] {cid}: {Path(args.out) / cid} holds other GLBs ({', '.join(others[:3])}); "
+                  "pass --replace to export alongside them")
+            continue
         env, costume_file = index.load_closure(cid)
         glb = Glb()
         ex = CostumeExporter(env, costume_file, glb)

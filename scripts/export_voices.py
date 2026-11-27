@@ -67,7 +67,8 @@ def sheet_index(acbs: list[Path], names: set[str]) -> dict[str, Path]:
     import mmap
 
     # one regex pass per bank for all names (a find per name re-reads ~6 GB of banks each time)
-    pattern = re.compile(b"\0(" + b"|".join(re.escape(n.encode()) for n in sorted(names, key=len, reverse=True)) + b")\0")
+    # the trailing NUL is a lookahead, so a wanted name right after another one still matches
+    pattern = re.compile(b"\0(" + b"|".join(re.escape(n.encode()) for n in sorted(names, key=len, reverse=True)) + b")(?=\0)")
     best: dict[str, tuple[Path, int]] = {}
     for p in acbs:
         with open(p, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
@@ -143,9 +144,11 @@ def main() -> None:
         wanted = set().union(*(se_ids(script_text(s)) for s in scripts))
         todo = {s for s in wanted if args.force or not (SE_DIR / f"{s}.webm").exists()}
         durations = json.loads(SE_DURATIONS.read_text(encoding="utf-8")) if SE_DURATIONS.exists() else {}
-        if todo:
-            # every SE cue lives in one big sheet: find_acb takes any name in a bank's string table,
-            # so a cue only that sheet holds finds it; decode it once
+        if todo and SE_SHEET_PROBE not in sheets:
+            print(f"[fail] no ACB holds {SE_SHEET_PROBE}: the SE sheet isn't among the banks")
+            failed += sorted(todo)
+        elif todo:
+            # every SE cue lives in one big sheet: a cue only that sheet holds finds it; decode once
             with tempfile.TemporaryDirectory() as tmp:
                 work = Path(tmp)
                 wavs = {w.stem: w for w in decode_sheet(sheets[SE_SHEET_PROBE], awbs, args.vgmstream, work, chunked=True)}
@@ -154,12 +157,19 @@ def main() -> None:
                         print(f"[skip] {se}: not in the SE sheet")
                         failed.append(se)
                         continue
-                    durations[se] = encode(wavs[se], SE_DIR / f"{se}.webm", "64k")
+                    try:
+                        durations[se] = encode(wavs[se], SE_DIR / f"{se}.webm", "64k")
+                    except subprocess.CalledProcessError as e:
+                        print(f"[fail] {se}: {e}")
+                        failed.append(se)
+                        continue
+                    # after every SE, so the durations always match the files on disk
+                    SE_DURATIONS.write_text(json.dumps(durations, indent=2, sort_keys=True), encoding="utf-8")
                     print(f"{se}: {durations[se]} s")
-            SE_DURATIONS.write_text(json.dumps(durations, indent=2, sort_keys=True), encoding="utf-8")
         print(f"SE: {len(wanted)} referenced, {len(todo)} exported")
     if failed:
         print(f"[WARN] not exported: {' '.join(failed)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

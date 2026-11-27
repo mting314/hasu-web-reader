@@ -531,7 +531,12 @@ The build prints referenced assets that aren't in the store. Currently unavailab
   exists only for 1021–1052), so it needs a reader fallback
 - props and backgrounds beyond hamproductions' index are exported from the raw data
   (`export_costume.py <ppadvId> --out public/assets/3d/ppadv`, which also generates Unity's
-  built-in Quad for picture boards; `scripts/export_backgrounds.py`). Not exportable as meshes:
+  built-in Quad for picture boards; `scripts/export_backgrounds.py`). The 10 early props from
+  hamproductions (`ppadv002/004/014/026/027/028/061/101/141/201`) are still their files: the build
+  uses an index entry only while its main GLB, extra GLBs and texture-map files are all in the
+  store. To replace one with a raw-data export, delete its extra GLBs and textures from the
+  bucket as well (`export_costume.py` refuses to write beside them without `--replace`), or the
+  reader loads both. Not exportable as meshes:
   particle-only props (rain, confetti, cherry blossoms) and parts on Unity's other built-in
   meshes (e.g. drink straws on the Cylinder). Backgrounds aren't all 1940x1100 @ 100 px/unit
   (27 of 154 recorded in `data_cache/background_sizes.json` differ); the reader's fixed

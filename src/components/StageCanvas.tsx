@@ -1248,8 +1248,14 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
           for (const g of gltfs) {
             if (!g?.scene) continue;
             const clone = g.scene.clone(true);
+            // Props exported from the raw data (scripts/export_costume.py) keep the prefab's own
+            // layout (set pieces sit far from their parent) and mark what the prefab has inactive
+            // or disabled; the repositioning below is only for hamproductions' "(Clone)" roots.
+            const fromRawData = isGameCostume(clone);
             clone.traverse((node: any) => {
-              if (
+              if (fromRawData) {
+                if (node.userData.active === false || node.userData.rendererEnabled === false) node.visible = false;
+              } else if (
                 node.name &&
                 (node.name.endsWith("(Clone)") ||
                   node.name.endsWith("Clone") ||
