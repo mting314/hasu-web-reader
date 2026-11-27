@@ -10,6 +10,7 @@ bilingual translations (`public/data/scenarios/<slug>.json`, e.g. 103-ep1-part1.
 from __future__ import annotations
 
 import copy
+import difflib
 import html
 import json
 import re
@@ -204,6 +205,31 @@ def fetch_or_load_hasuko(script_id: str, lang: str = "en") -> list[dict[str, str
     return extract_hasuko_html_lines(cache_file.read_text(encoding="utf-8"))
 
 
+def hasuko_page_id(script_id: str) -> str:
+    """Hasu-KO's page for a part. It numbers a series' parts by their position in the game's
+    order, not by script id: 104007 opens with the interlude 10400791, so Hasu-KO's 10400701 is
+    that interlude and our 10400701 is their 10400702. Parts not in the story index keep their id."""
+    if STORY_INDEX_PATH.exists():
+        for s in json.loads(STORY_INDEX_PATH.read_text(encoding="utf-8"))["series"]:
+            ids = [p["scriptId"] for p in s["parts"]]
+            if script_id in ids:
+                return f"{s['id']}{ids.index(script_id) + 1:02d}"
+    return script_id
+
+
+def align_rows(ours: list[str], theirs: list[str]) -> dict[int, int]:
+    """Pair our lines with a translation's rows by their speaker sequence: by position when the
+    counts agree, else through difflib's matching runs (equal runs, and replaced runs of the same
+    length); lines in the unmatched gaps get no translation rather than a neighbour's."""
+    if len(ours) == len(theirs):
+        return {i: i for i in range(len(ours))}
+    pairs: dict[int, int] = {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, ours, theirs, autojunk=False).get_opcodes():
+        if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+            pairs.update({i1 + k: j1 + k for k in range(i2 - i1)})
+    return pairs
+
+
 def load_ep1_part1_dub_script() -> list[dict[str, str]]:
     p = HASU_DUB_DIR / "ep1-part1-script.txt"
     if not p.exists():
@@ -341,9 +367,10 @@ def compile_script(
     txt_path = HASU_DUB_DIR / "story_main_txt" / f"story_main_{script_id}.txt"
     raw_lines = txt_path.read_text(encoding="utf-8").splitlines()
 
-    # Load translations
-    en_hasuko = fetch_or_load_hasuko(script_id, "en")
-    ko_hasuko = fetch_or_load_hasuko(script_id, "ko")
+    # Load translations (Hasu-KO numbers a series' parts by their position, not by script id)
+    hasuko_id = hasuko_page_id(script_id)
+    en_hasuko = fetch_or_load_hasuko(hasuko_id, "en")
+    ko_hasuko = fetch_or_load_hasuko(hasuko_id, "ko")
     en_dub = load_ep1_part1_dub_script() if script_id == "10300101" else []
 
     # Mutable running state of the 3D ADV stage
@@ -1041,16 +1068,7 @@ def compile_script(
                     "speaker": en_dub[idx]["speaker"],
                     "text": en_dub[idx]["text"],
                 }
-            if idx < len(en_hasuko):
-                translations["en_hasuko"] = {
-                    "speaker": en_hasuko[idx]["speaker"] or speaker_en,
-                    "text": en_hasuko[idx]["text"],
-                }
-            if idx < len(ko_hasuko):
-                translations["ko_hasuko"] = {
-                    "speaker": ko_hasuko[idx]["speaker"],
-                    "text": ko_hasuko[idx]["text"],
-                }
+            # Hasu-KO's rows are attached after every turn exists (align_rows, below)
 
             turn_obj = {
                 "index": idx,
@@ -1130,8 +1148,23 @@ def compile_script(
     # Translation" (hasu-ko.vercel.app). The site does not name individual translators, so
     # the project itself is credited. The hasu-dub script is that same English translation
     # (132/138 lines identical in 10300101) with line breaks merged and light edits for dubbing.
-    hasuko_en_url = f"https://hasu-ko.vercel.app/en/story/{script_id}"
-    hasuko_ko_url = f"https://hasu-ko.vercel.app/story/{script_id}"
+    en_map = align_rows([t["speakerEn"] for t in turns], [r["speaker"] for r in en_hasuko])
+    # the Korean page has Korean speaker names: reuse the English pairing when its rows match
+    if len(ko_hasuko) == len(en_hasuko):
+        ko_map = en_map
+    else:
+        ko_map = {i: i for i in range(len(turns))} if len(ko_hasuko) == len(turns) else {}
+    for i, t in enumerate(turns):
+        if (j := en_map.get(i)) is not None:
+            t["translations"]["en_hasuko"] = {"speaker": en_hasuko[j]["speaker"] or t["speakerEn"], "text": en_hasuko[j]["text"]}
+        if (j := ko_map.get(i)) is not None:
+            t["translations"]["ko_hasuko"] = {"speaker": ko_hasuko[j]["speaker"], "text": ko_hasuko[j]["text"]}
+    if en_hasuko and len(en_map) < len(turns):
+        print(f"  [WARN] {script_id}: Hasu-KO {hasuko_id} has {len(en_hasuko)} rows for {len(turns)} lines; "
+              f"{len(turns) - len(en_map)} line(s) left without its translation")
+
+    hasuko_en_url = f"https://hasu-ko.vercel.app/en/story/{hasuko_id}"
+    hasuko_ko_url = f"https://hasu-ko.vercel.app/story/{hasuko_id}"
     translation_sources = []
     if en_dub:
         translation_sources.append({

@@ -689,26 +689,7 @@
       "descriptionEn": "After Kaho declares that she will \"become the world's greatest school idol,\" Kozue assigns her intense training for the next event in Kanazawa City.",
       "totalTurns": 35,
       "totalDurationSec": 270.0,
-      "translationSources": [
-        {
-          "id": "en_hasuko",
-          "lang": "en",
-          "label": "English (Hasu-KO)",
-          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10300391",
-          "homepage": "https://hasu-ko.vercel.app/en/",
-          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
-        },
-        {
-          "id": "ko_hasuko",
-          "lang": "ko",
-          "label": "한국어 (Hasu-KO)",
-          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10300391",
-          "homepage": "https://hasu-ko.vercel.app/",
-          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
-        }
-      ],
+      "translationSources": [],
       "assetCounts": {
         "characters": 2,
         "backgrounds": 2,
@@ -1243,7 +1224,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301201",
+          "url": "https://hasu-ko.vercel.app/en/story/10301202",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1252,7 +1233,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301201",
+          "url": "https://hasu-ko.vercel.app/story/10301202",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1361,7 +1342,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301202",
+          "url": "https://hasu-ko.vercel.app/en/story/10301203",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1370,7 +1351,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301202",
+          "url": "https://hasu-ko.vercel.app/story/10301203",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1509,7 +1490,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301203",
+          "url": "https://hasu-ko.vercel.app/en/story/10301204",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1518,7 +1499,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301203",
+          "url": "https://hasu-ko.vercel.app/story/10301204",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1597,7 +1578,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301204",
+          "url": "https://hasu-ko.vercel.app/en/story/10301205",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1606,7 +1587,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301204",
+          "url": "https://hasu-ko.vercel.app/story/10301205",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1675,7 +1656,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301205",
+          "url": "https://hasu-ko.vercel.app/en/story/10301206",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1684,7 +1665,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301205",
+          "url": "https://hasu-ko.vercel.app/story/10301206",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1813,7 +1794,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301206",
+          "url": "https://hasu-ko.vercel.app/en/story/10301207",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1822,7 +1803,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301206",
+          "url": "https://hasu-ko.vercel.app/story/10301207",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -1901,7 +1882,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301207",
+          "url": "https://hasu-ko.vercel.app/en/story/10301208",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -1910,7 +1891,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301207",
+          "url": "https://hasu-ko.vercel.app/story/10301208",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -2019,7 +2000,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301208",
+          "url": "https://hasu-ko.vercel.app/en/story/10301209",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -2028,7 +2009,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301208",
+          "url": "https://hasu-ko.vercel.app/story/10301209",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -2117,7 +2098,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301209",
+          "url": "https://hasu-ko.vercel.app/en/story/10301210",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -2126,7 +2107,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301209",
+          "url": "https://hasu-ko.vercel.app/story/10301210",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -2205,7 +2186,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10301210",
+          "url": "https://hasu-ko.vercel.app/en/story/10301211",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -2214,7 +2195,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10301210",
+          "url": "https://hasu-ko.vercel.app/story/10301211",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -2651,7 +2632,26 @@
       "descriptionEn": "Rurino is fired up for her first Nadeshiko Festival. But Megumi is stuck in remedial lessons and can't help prepare, so she and Hime begin getting ready as \"Mira-Cra Park! without Megu\"...!?",
       "totalTurns": 141,
       "totalDurationSec": 841.6,
-      "translationSources": [],
+      "translationSources": [
+        {
+          "id": "en_hasuko",
+          "lang": "en",
+          "label": "English (Hasu-KO)",
+          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/en/story/10400301",
+          "homepage": "https://hasu-ko.vercel.app/en/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "ko_hasuko",
+          "lang": "ko",
+          "label": "한국어 (Hasu-KO)",
+          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/story/10400301",
+          "homepage": "https://hasu-ko.vercel.app/",
+          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
+        }
+      ],
       "assetCounts": {
         "characters": 12,
         "backgrounds": 4,
@@ -2806,7 +2806,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400301",
+          "url": "https://hasu-ko.vercel.app/en/story/10400302",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -2815,7 +2815,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400301",
+          "url": "https://hasu-ko.vercel.app/story/10400302",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -2924,7 +2924,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400302",
+          "url": "https://hasu-ko.vercel.app/en/story/10400303",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -2933,7 +2933,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400302",
+          "url": "https://hasu-ko.vercel.app/story/10400303",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3002,7 +3002,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400303",
+          "url": "https://hasu-ko.vercel.app/en/story/10400304",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3011,7 +3011,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400303",
+          "url": "https://hasu-ko.vercel.app/story/10400304",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3090,7 +3090,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400304",
+          "url": "https://hasu-ko.vercel.app/en/story/10400305",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3099,7 +3099,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400304",
+          "url": "https://hasu-ko.vercel.app/story/10400305",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3188,7 +3188,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400305",
+          "url": "https://hasu-ko.vercel.app/en/story/10400306",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3197,7 +3197,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400305",
+          "url": "https://hasu-ko.vercel.app/story/10400306",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3276,7 +3276,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400306",
+          "url": "https://hasu-ko.vercel.app/en/story/10400307",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3285,7 +3285,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400306",
+          "url": "https://hasu-ko.vercel.app/story/10400307",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3354,7 +3354,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400307",
+          "url": "https://hasu-ko.vercel.app/en/story/10400308",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3363,7 +3363,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400307",
+          "url": "https://hasu-ko.vercel.app/story/10400308",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3452,7 +3452,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400308",
+          "url": "https://hasu-ko.vercel.app/en/story/10400309",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3461,7 +3461,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400308",
+          "url": "https://hasu-ko.vercel.app/story/10400309",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3604,7 +3604,26 @@
       "descriptionEn": "With the Rindo Festival and regional qualifiers ahead of them, the nine are running at full throttle. The first-years keep practicing in order to complete the 104th term's Link to the FUTURE, but...",
       "totalTurns": 167,
       "totalDurationSec": 920.7,
-      "translationSources": [],
+      "translationSources": [
+        {
+          "id": "en_hasuko",
+          "lang": "en",
+          "label": "English (Hasu-KO)",
+          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/en/story/10400701",
+          "homepage": "https://hasu-ko.vercel.app/en/",
+          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
+        },
+        {
+          "id": "ko_hasuko",
+          "lang": "ko",
+          "label": "한국어 (Hasu-KO)",
+          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
+          "url": "https://hasu-ko.vercel.app/story/10400701",
+          "homepage": "https://hasu-ko.vercel.app/",
+          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
+        }
+      ],
       "assetCounts": {
         "characters": 6,
         "backgrounds": 4,
@@ -3699,7 +3718,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400701",
+          "url": "https://hasu-ko.vercel.app/en/story/10400702",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3708,7 +3727,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400701",
+          "url": "https://hasu-ko.vercel.app/story/10400702",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -3927,7 +3946,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400702",
+          "url": "https://hasu-ko.vercel.app/en/story/10400703",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -3936,7 +3955,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400702",
+          "url": "https://hasu-ko.vercel.app/story/10400703",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4105,7 +4124,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400703",
+          "url": "https://hasu-ko.vercel.app/en/story/10400704",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4114,7 +4133,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400703",
+          "url": "https://hasu-ko.vercel.app/story/10400704",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4273,7 +4292,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400704",
+          "url": "https://hasu-ko.vercel.app/en/story/10400705",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4282,7 +4301,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400704",
+          "url": "https://hasu-ko.vercel.app/story/10400705",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4361,7 +4380,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400705",
+          "url": "https://hasu-ko.vercel.app/en/story/10400706",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4370,7 +4389,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400705",
+          "url": "https://hasu-ko.vercel.app/story/10400706",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4529,7 +4548,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400706",
+          "url": "https://hasu-ko.vercel.app/en/story/10400707",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4538,7 +4557,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400706",
+          "url": "https://hasu-ko.vercel.app/story/10400707",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4677,7 +4696,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400707",
+          "url": "https://hasu-ko.vercel.app/en/story/10400708",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4686,7 +4705,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400707",
+          "url": "https://hasu-ko.vercel.app/story/10400708",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4755,7 +4774,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400708",
+          "url": "https://hasu-ko.vercel.app/en/story/10400709",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4764,7 +4783,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400708",
+          "url": "https://hasu-ko.vercel.app/story/10400709",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -4863,7 +4882,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400709",
+          "url": "https://hasu-ko.vercel.app/en/story/10400710",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -4872,7 +4891,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400709",
+          "url": "https://hasu-ko.vercel.app/story/10400710",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -5171,7 +5190,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400710",
+          "url": "https://hasu-ko.vercel.app/en/story/10400711",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -5180,7 +5199,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400710",
+          "url": "https://hasu-ko.vercel.app/story/10400711",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -5259,7 +5278,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400711",
+          "url": "https://hasu-ko.vercel.app/en/story/10400712",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -5268,7 +5287,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400711",
+          "url": "https://hasu-ko.vercel.app/story/10400712",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -5397,7 +5416,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400712",
+          "url": "https://hasu-ko.vercel.app/en/story/10400713",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -5406,7 +5425,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400712",
+          "url": "https://hasu-ko.vercel.app/story/10400713",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -5535,7 +5554,7 @@
           "lang": "en",
           "label": "English (Hasu-KO)",
           "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10400713",
+          "url": "https://hasu-ko.vercel.app/en/story/10400714",
           "homepage": "https://hasu-ko.vercel.app/en/",
           "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
         },
@@ -5544,7 +5563,7 @@
           "lang": "ko",
           "label": "한국어 (Hasu-KO)",
           "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10400713",
+          "url": "https://hasu-ko.vercel.app/story/10400714",
           "homepage": "https://hasu-ko.vercel.app/",
           "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
         }
@@ -10715,26 +10734,7 @@
       "descriptionEn": "At last, the fourth spring of cherry blossoms arrives. With the Bloom Garden Party just around the corner, the graduates of the 102nd class have returned to Hasunosora. The curtain rises on their greatest, and final, stage--",
       "totalTurns": 17,
       "totalDurationSec": 96.1,
-      "translationSources": [
-        {
-          "id": "en_hasuko",
-          "lang": "en",
-          "label": "English (Hasu-KO)",
-          "attribution": "Hasunosora Activity Record Translation (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/en/story/10501291",
-          "homepage": "https://hasu-ko.vercel.app/en/",
-          "note": "Unofficial English fan translation of the Link! Like! Love Live! activity records."
-        },
-        {
-          "id": "ko_hasuko",
-          "lang": "ko",
-          "label": "한국어 (Hasu-KO)",
-          "attribution": "하스노소라 활동기록 번역 (Hasu-KO)",
-          "url": "https://hasu-ko.vercel.app/story/10501291",
-          "homepage": "https://hasu-ko.vercel.app/",
-          "note": "Link! Like! 러브라이브! 활동기록 비공식 한국어 번역 (unofficial Korean fan translation)."
-        }
-      ],
+      "translationSources": [],
       "assetCounts": {
         "characters": 2,
         "backgrounds": 3,
