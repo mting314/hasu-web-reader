@@ -276,15 +276,25 @@ const WRAP: Record<string, THREE.Wrapping> = {
 /**
  * A pass that samples through an inline sampler (`sampler_Linear_Repeat`) ignores the texture's
  * own filtering and wrapping. Give it a copy of the texture with that state, so a texture other
- * materials share keeps its own.
+ * materials share keeps its own. One copy per texture and state, shared by every pass.
  */
+const samplerCopies = new WeakMap<THREE.Texture, Map<string, THREE.Texture>>();
 function withSamplerStates(textures: Map<string, THREE.Texture>, states: SamplerStates): Map<string, THREE.Texture> {
   const out = new Map(textures);
   for (const [slot, s] of Object.entries(states)) {
     const tex = textures.get(slot);
     if (!tex) continue;
+    const key = JSON.stringify(s);
+    let copies = samplerCopies.get(tex);
+    if (!copies) samplerCopies.set(tex, (copies = new Map()));
+    const cached = copies.get(key);
+    if (cached) {
+      out.set(slot, cached);
+      continue;
+    }
     const copy = tex.clone();
-    copy.wrapS = copy.wrapT = WRAP[s.address] ?? tex.wrapS;
+    copy.wrapS = WRAP[s.address] ?? tex.wrapS;
+    copy.wrapT = WRAP[s.address] ?? tex.wrapT;
     const linear = s.filter !== "nearest";
     copy.magFilter = linear ? THREE.LinearFilter : THREE.NearestFilter;
     copy.minFilter =
@@ -294,6 +304,7 @@ function withSamplerStates(textures: Map<string, THREE.Texture>, states: Sampler
           ? linear ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapLinearFilter
           : linear ? THREE.LinearFilter : THREE.NearestFilter;
     copy.needsUpdate = true;
+    copies.set(key, copy);
     out.set(slot, copy);
   }
   return out;

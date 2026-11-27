@@ -217,6 +217,8 @@ def convert_body(body: str, stage: str) -> str:
     s = re.sub(r"(\w+)\.sample\(\s*\w+\s*,\s*([^;]*?),\s*level\(([^)]*)\)\s*\)", r"textureLod(\1, U2G(\2), \3)", s)
     s = re.sub(r"(\w+)\.sample\(\s*\w+\s*,\s*([^;]*?),\s*bias\(([^)]*)\)\s*\)(\.[xyzw]+)?;", r"texture(\1, U2G(\2))\4;", s)
     s = re.sub(r"(\w+)\.sample\(\s*\w+\s*,\s*([^;]*?)\)(\.[xyzw]+)?;", r"texture(\1, U2G(\2))\3;", s)
+    if "constexpr sampler" in s:
+        raise ValueError("an inline sampler the converter couldn't parse")
     if ".sample(" in s:
         raise ValueError("unconverted texture sample")
     s = re.sub(r"\bfma\(", "fma_(", s)
@@ -339,6 +341,10 @@ def main() -> None:
     texts = {}
     for name, fname in SHADER_TEXTS.items():
         path = Path(args.shader_text) if name == "UBER_DEFAULTS" and args.shader_text else vdir.parent / fname
+        if not path.exists() and name in ("UBER_DEFAULTS", "EYE_DEFAULTS"):
+            # the main characters' shaders: empty defaults would silently zero every property a
+            # material doesn't store (_MainColor, _MainLightIntensity, ...)
+            raise SystemExit(f"missing ShaderLab text for {name}: {path}")
         texts[name] = path.read_text() if path.exists() else ""
 
     lines = [
