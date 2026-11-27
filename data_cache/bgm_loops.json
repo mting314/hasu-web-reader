@@ -1,4 +1,16 @@
 {
+  "bgm_adv_20410401@mirakuri_ation": {
+    "sampleRate": 48000,
+    "samples": 10004196,
+    "loopStart": 727584,
+    "loopEnd": 10004196
+  },
+  "bgm_adv_40512301@theater_ikizama_inst": {
+    "sampleRate": 48000,
+    "samples": 9511316,
+    "loopStart": null,
+    "loopEnd": null
+  },
   "bgm_adv_afternoon_0001": {
     "sampleRate": 48000,
     "samples": 4377984,
@@ -11,11 +23,35 @@
     "loopStart": 0,
     "loopEnd": 3216013
   },
+  "bgm_adv_determination_0001": {
+    "sampleRate": 48000,
+    "samples": 5313920,
+    "loopStart": 211895,
+    "loopEnd": 5313605
+  },
+  "bgm_adv_determination_0002": {
+    "sampleRate": 48000,
+    "samples": 6814080,
+    "loopStart": 38193,
+    "loopEnd": 6813794
+  },
+  "bgm_adv_epilogue_0001": {
+    "sampleRate": 48000,
+    "samples": 5336960,
+    "loopStart": 84696,
+    "loopEnd": 5336678
+  },
   "bgm_adv_evening_0001": {
     "sampleRate": 48000,
     "samples": 4483328,
     "loopStart": 21062,
     "loopEnd": 4483037
+  },
+  "bgm_adv_evening_0002": {
+    "sampleRate": 48000,
+    "samples": 3682176,
+    "loopStart": 599,
+    "loopEnd": 3681820
   },
   "bgm_adv_funny_0001": {
     "sampleRate": 48000,
@@ -29,16 +65,106 @@
     "loopStart": 323105,
     "loopEnd": 4037233
   },
+  "bgm_adv_night_0001": {
+    "sampleRate": 48000,
+    "samples": 4659840,
+    "loopStart": 161971,
+    "loopEnd": 4659505
+  },
+  "bgm_adv_night_0002": {
+    "sampleRate": 48000,
+    "samples": 5627776,
+    "loopStart": 779208,
+    "loopEnd": 5627488
+  },
+  "bgm_adv_nostalgic_0001": {
+    "sampleRate": 48000,
+    "samples": 4696704,
+    "loopStart": 50916,
+    "loopEnd": 4696445
+  },
+  "bgm_adv_party_0001": {
+    "sampleRate": 48000,
+    "samples": 3841920,
+    "loopStart": 342906,
+    "loopEnd": 3841605
+  },
+  "bgm_adv_positive_0001": {
+    "sampleRate": 48000,
+    "samples": 4056576,
+    "loopStart": 90454,
+    "loopEnd": 4056306
+  },
+  "bgm_adv_positive_0002": {
+    "sampleRate": 48000,
+    "samples": 5220480,
+    "loopStart": 420106,
+    "loopEnd": 5220109
+  },
+  "bgm_adv_relax0001": {
+    "sampleRate": 48000,
+    "samples": 3779328,
+    "loopStart": 540151,
+    "loopEnd": 3778953
+  },
   "bgm_adv_sentimental_0001": {
     "sampleRate": 48000,
     "samples": 4362496,
     "loopStart": 42236,
     "loopEnd": 4362173
   },
+  "bgm_adv_serious_0001": {
+    "sampleRate": 48000,
+    "samples": 3592832,
+    "loopStart": 0,
+    "loopEnd": 3592498
+  },
+  "bgm_adv_serious_0002": {
+    "sampleRate": 48000,
+    "samples": 8016896,
+    "loopStart": 419967,
+    "loopEnd": 8016527
+  },
+  "bgm_adv_title_0002": {
+    "sampleRate": 48000,
+    "samples": 4558464,
+    "loopStart": 200830,
+    "loopEnd": 4558094
+  },
+  "bgm_adv_urban_0001": {
+    "sampleRate": 48000,
+    "samples": 5184384,
+    "loopStart": 230555,
+    "loopEnd": 5184127
+  },
+  "bgm_fes_interlude_0001": {
+    "sampleRate": 48000,
+    "samples": 4517120,
+    "loopStart": 290140,
+    "loopEnd": 4516815
+  },
   "bgm_fes_interlude_0002": {
     "sampleRate": 48000,
     "samples": 3332480,
     "loopStart": 246387,
     "loopEnd": 3332102
+  },
+  "bgm_with_fun_0001": {
+    "sampleRate": 48000,
+    "samples": 3892224,
+    "loopStart": 579956,
+    "loopEnd": 3891955
+  },
+  "bgm_with_gentle_0001": {
+    "sampleRate": 48000,
+    "samples": 3702656,
+    "loopStart": 64341,
+    "loopEnd": 3702338
+  },
+  "bgm_with_relax_0001": {
+    "sampleRate": 48000,
+    "samples": 4054016,
+    "loopStart": 368386,
+    "loopEnd": 4053701
   }
 }
