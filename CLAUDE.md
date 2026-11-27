@@ -270,7 +270,11 @@ loops an `AudioBufferSourceNode` with `loopStart`/`loopEnd`, which is also what 
 
 One `[command args…]` per line, with `#` comments; scene names come from `#背景` comments.
 Coordinates are Unity's: the player flips z (`x, y, -z`) and character yaw becomes `180 - ry`.
-Backgrounds are 1920×1080 at 100 px/unit (a 19.2 × 10.8 m quad); the camera FOV is 10.5°.
+A background is a SpriteRenderer (`StoryModelSpace.SetBackgroundSprite`): its size is the sprite's
+pixels ÷ pixels-per-unit times the command's scale. Most are 1940×1100 at 100 (19.4 × 11.0 m), but
+not all (`data_cache/background_sizes.json`; the build puts `background.size` in every state). The
+story camera is the `StoryCamera` prefab: vertical FOV 10°, clip planes 0.3 / 1000; only
+`[カメラズーム fov]` changes the FOV (`CameraZoomCommand.DoZoom` → `Camera.DOFieldOfView`).
 Commands `scripts/build_scenarios.py` handles:
 
 - **Characters**: `キャラ表示` (name, costume, expression controller, pos, rot), `キャラ非表示`,
