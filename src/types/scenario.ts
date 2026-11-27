@@ -331,6 +331,7 @@ export type PrefetchMode = "off" | "next1" | "next5" | "all";
 
 export interface ReaderSettings {
   primaryTranslationId: string;
+  showSubtitles: boolean;
   showSecondaryLanguage: boolean;
   subtitleLayout: "side-by-side" | "stacked" | "primary-only";
   textSpeed: number; // 1..5 (5 = instant)
