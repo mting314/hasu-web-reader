@@ -487,9 +487,24 @@ A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored i
   globals (`SekaiCharacterOutlinePass.UpdateOutline` + the renderer's `SekaiCharacterOutlineFeature`
   settings in the APK's `globalgamemanagers.assets`), ambient/outline colour defaults
   (`SekaiCharacterAmbientLight` .ctor/Reset).
+- **Spring bones**: PJSK's hair/skirt physics is UTJ SpringBone (UnityChanSpringBone release 1.1,
+  MIT): a `SpringManager` on Neck (hair, head prefab) and on Hip (skirt, bust, accessories, body
+  prefab), `SpringBone` / `Sekai.SekaiSpringBone` on each `EX_*` bone (pivot = its `*_offset`
+  parent), `SpringSphereCollider` / `SpringCapsuleCollider` on `CL_*` nodes. PJSK's build is
+  upstream's code (checked: UpdateDynamics, UpdateSpring, ApplyAngleLimits); the extra
+  `isSumOfForcesOnBone` gate defaults to true. `ModelUtility.SpringBoneSetup` (0x4EC5CFC) appends
+  body colliders to head bones by `colliderFlag` bits 0–5 = names starting `CL_Hip`, `CL_Chest`,
+  `CL_Left_Arm`, `CL_Right_Arm`, `CL_Left_Elbow`, `CL_Right_Elbow` (the order of its 12 lambdas;
+  e.g. flag 6 = Chest + Left_Arm, even on right-side strands). The exporter writes them as node
+  extras (`utjSpringManager` / `utjSpringBone` / `utjSpringCollider`, references by `utjNode`
+  index, flags already resolved); `utjSpringBone.ts` is a port of upstream, **the second
+  hand-rolled exception the user approved, again for this feature only**. It simulates in world
+  space with lengths and forces times the model's scale (exact similarity: a 1.64× model moves like
+  the native one), uses fixed 1/60 s steps from real frame time, and resets when a character
+  jumps. All PJSK managers have length limits and ground collision off and no panel colliders.
+  Headless check: `/tmp/pjsk-tools/spring_sim_all.ts` (bundle with esbuild) runs every model.
 - Not done yet: the stage `SekaiDirectionalLight` shadow colour/threshold (still Cleista's
-  0.40625), the Eyelash pass, spring bones (UTJ `SpringManager`), helper bones (`*ArmRoll`,
-  `*EllbowSupport`).
+  0.40625), the Eyelash pass, helper bones (`*ArmRoll`, `*EllbowSupport`).
 - Export gotcha (fixed in `export_costume.py`): lossless WebP drops RGB under alpha 0 unless saved
   with `exact=True`; PJSK's `_ValueTex` (and possibly Hasu control maps) store data there.
 

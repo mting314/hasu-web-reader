@@ -748,7 +748,7 @@ export const StageCanvas: React.FC<StageCanvasProps> = ({
         if (char.name === speaker && lip.level > VOICE_AUDIBLE_LEVEL) char.emotion.voiceActive();
         char.emotion.update(dt);
         char.flush.update(dt);
-        char.swap?.update();
+        char.swap?.update(dt);
       }
 
       renderer.render(scene, camera);
