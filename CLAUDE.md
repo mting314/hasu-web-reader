@@ -229,10 +229,16 @@ All motion GLBs in the store are exported from the raw data by `scripts/export_m
 (see "Converting motions" below). The 127 older hamproductions-derived files are kept only as a
 local backup in `.inspect-tmp/hamproductions-motions-backup/`; don't use them as a reference.
 
-**Audio.** Voice and SE are Opus `.webm`; BGM is Opus `.webm` re-exported from the game (see BGM loops), else the older `.mp3`. Several exported "ambience" SEs are
-sub-second fragments (e.g. `se_adv_ambience_classroom_0001` is one 0.48 s tap); looping those
-sounds like endless footsteps, so the build only loops SEs ≥ 3 s (durations cached in
-`data_cache/se_durations.json`).
+**Audio.** Voice and SE are Opus `.webm`; BGM is Opus `.webm` re-exported from the game (see BGM loops), else the older `.mp3`.
+Voices and SEs come from the same CRI banks as BGM, via `scripts/export_voices.py --scripts …`
+(reuses `export_bgm.py`'s bank lookup and vgmstream driver): each story part has a voice cue
+sheet `vo_adv_<scriptId>` whose waves are named exactly like our files
+(`vo_adv_10300101_0001_m1031_01@kaho`), decoded in one vgmstream call (`-S 0 -o ?n.wav`); every
+`se_adv_*` cue is in one 50 MB sheet (248 waves), decoded 50 at a time. The episode-1 voices and
+SEs originally came from hamproductions; their ambience SEs were truncated (the store had
+`se_adv_ambience_classroom_0001` as a 0.48 s tap; the game's is 31.8 s), which is why the build
+only loops SEs ≥ 3 s (durations in `data_cache/se_durations.json`, which the exporter updates).
+Episode 1's SEs are re-exported from the banks; that rule may no longer be needed.
 
 **BGM loops.** The game plays BGM through CRI ADX2 (`CriAcb BgmAdvMorning0001`, cue
 `Morning_0001`, path `/BGM/adv/bgm_adv_morning_0001.acb`): an ACB cue sheet whose HCA wave
@@ -283,6 +289,18 @@ sub-clips by those cumulative waits (`voiceStartSec`/`voiceEndSec`).
 The compiled `public/data/scenarios/<slug>.json` has, per line, a full `stateBefore` stage
 snapshot (so any line can be jumped to), timed `intraEvents`, aligned translations, `tokensJp`
 (Japanese word segmentation, see `scripts/jp_lexer.py`), and a per-episode `lexicon`.
+
+Building: `npm run build-scenarios -- 103003 10400701` compiles those parts (8-digit script ids)
+or every part of a series (6-digit `AdvSeries` id); with no ids it rebuilds every part already in
+`public/data/catalog.json`. Catalog text comes from `public/data/story_index.json` (the game's
+AdvSeries/AdvDatas, `scripts/build_story_index.py`) with `EPISODE_OVERRIDES` for episode 1's
+hand-written English; new parts are merged into the catalog in story order. Translations are
+Hasu-KO's per-part pages (cached as `data_cache/hasuko_<lang>_<id>.html`; some bonus parts have
+none). Afterwards set the index's `available` flags to the compiled files (rerunning
+`build_story_index.py` also refreshes its Hasu-KO titles, a separate change). Assets must be in
+the store manifest first (export, upload, `scripts/update_store_manifest.sh`); props whose
+hamproductions index entry isn't complete in the store use our self-contained export. The files
+are ~2 MB each (gzip ~150 KB); two thirds are the per-line `stateBefore`/`stateAfter` snapshots.
 
 ## Working with the raw data
 
@@ -511,9 +529,20 @@ The build prints referenced assets that aren't in the store. Currently unavailab
   42 roll/bend/slide helper bones. In Three.js, export the `MagicaCloth2` bone chains and colliders
   to JSON and drive the `SP_*` chains with `@pixiv/three-vrm-springbone` rather than writing a
   custom spring physics solver.
-- the dorm mother's 5 voice clips (`vo_adv_10300101_0046…0050_m9009_01`), so those lines play unvoiced
-- Sachi's mini icon (`charamini_icon_face_sd_1011_01`)
-- prop `ppadv006_pamphlet`, which isn't in the asset index (left off the stage)
+- Sachi's mini icon (`charamini_icon_face_sd_1011_01`): the game has none (`icon_face_sd_*`
+  exists only for 1021–1052), so it needs a reader fallback
+- props and backgrounds beyond hamproductions' index are exported from the raw data
+  (`export_costume.py <ppadvId> --out public/assets/3d/ppadv`, which also generates Unity's
+  built-in Quad for picture boards; `scripts/export_backgrounds.py`). The 10 early props from
+  hamproductions (`ppadv002/004/014/026/027/028/061/101/141/201`) are still their files: the build
+  uses an index entry only while its main GLB, extra GLBs and texture-map files are all in the
+  store. To replace one with a raw-data export, delete its extra GLBs and textures from the
+  bucket as well (`export_costume.py` refuses to write beside them without `--replace`), or the
+  reader loads both. Not exportable as meshes:
+  particle-only props (rain, confetti, cherry blossoms) and parts on Unity's other built-in
+  meshes (e.g. drink straws on the Cylinder). Backgrounds aren't all 1940x1100 @ 100 px/unit
+  (27 of 154 recorded in `data_cache/background_sizes.json` differ); the reader's fixed
+  19.2 x 10.8 m plane distorts those
 
 ## Environment gotchas
 

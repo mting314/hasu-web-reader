@@ -17,8 +17,12 @@ The GLB holds:
 Conversion matches the motion GLBs: position (-x, y, z), rotation (x, -y, -z, w), triangle winding
 reversed, tangent w negated, inverse bind matrices mirrored.
 
+Story props (`ppadv*`) are prefab bundles too, drawn by MeshRenderers (the mesh on the GameObject's
+MeshFilter, no bones), and export the same way into the props folder.
+
 Usage:
   uv run scripts/export_costume.py 3d_costume_1001103101 [...] [--out public/assets/3d/costume]
+  uv run scripts/export_costume.py ppadv006_pamphlet --out public/assets/3d/ppadv
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INDEX = ROOT / ".inspect-tmp" / "ios_index.jsonl"
 DEFAULT_OUT = ROOT / "public" / "assets" / "3d" / "costume"
 MIRROR = np.diag([-1.0, 1.0, 1.0, 1.0])
+BUILTIN_QUAD = 10210  # Unity's Quad in `Library/unity default resources`
 DATA_TEXTURE_HINTS = ("controlmap", "mask", "normal", "gloss", "matcap", "_nml", "_ctrl")
 
 
@@ -210,20 +215,45 @@ class CostumeExporter:
         tt = obj.read_typetree()
         shader_obj = self.resolve(obj.assets_file, tt["m_Shader"])
         shader = shader_obj.read_typetree()["m_ParsedForm"]["m_Name"] if shader_obj is not None else None
+        if shader is None and tt["m_Shader"]["m_FileID"]:
+            # a shader outside the bundles, e.g. Unity's built-in resources (some props' materials
+            # use unity_builtin_extra 10752); keep the reference
+            ext = obj.assets_file.externals[tt["m_Shader"]["m_FileID"] - 1].path.split("/")[-1]
+            shader = f"{ext}:{tt['m_Shader']['m_PathID']}"
         props = tt["m_SavedProperties"]
         textures = {}
         for slot, env in props["m_TexEnvs"]:
             ti = self.texture(obj.assets_file, env["m_Texture"])
             if ti is not None:
                 textures[slot] = {"index": ti, "scale": vec(env["m_Scale"], "xy"), "offset": vec(env["m_Offset"], "xy")}
+        # JSON has no inf/NaN, and the reader types floats/colors as numbers; the few properties
+        # holding them (URP's _CameraFadeParams far = inf on some props) go to `nonFinite` as text
+        def text(v: float) -> str:
+            return "NaN" if np.isnan(v) else ("Infinity" if v > 0 else "-Infinity")
+
+        floats, colors, non_finite = {}, {}, {}
+        for k, v in props["m_Floats"]:
+            v = float(v)
+            if np.isfinite(v):
+                floats[k] = v
+            else:
+                non_finite[k] = text(v)
+        for k, v in props["m_Colors"]:
+            c = [float(v["r"]), float(v["g"]), float(v["b"]), float(v["a"])]
+            if all(np.isfinite(c)):
+                colors[k] = c
+            else:
+                non_finite[k] = [x if np.isfinite(x) else text(x) for x in c]
         unity = {
             "shader": shader,
             "keywords": tt.get("m_ValidKeywords") or (tt.get("m_ShaderKeywords") or "").split(),
             "renderQueue": tt.get("m_CustomRenderQueue", -1),
-            "floats": {k: float(v) for k, v in props["m_Floats"]},
-            "colors": {k: [float(v["r"]), float(v["g"]), float(v["b"]), float(v["a"])] for k, v in props["m_Colors"]},
+            "floats": floats,
+            "colors": colors,
             "textures": textures,
         }
+        if non_finite:
+            unity["nonFinite"] = non_finite
         mat = {"name": tt["m_Name"], "extras": {"unity": unity}}
         main = textures.get("_MainTex") or textures.get("_MainTexture")
         if main:
@@ -236,8 +266,50 @@ class CostumeExporter:
     # --- skinned meshes -------------------------------------------------------------------------
     def renderers(self):
         for obj in self.env.objects:
-            if obj.type.name == "SkinnedMeshRenderer" and obj.assets_file.parent.name == self.costume_file:
+            if obj.type.name in ("SkinnedMeshRenderer", "MeshRenderer") and obj.assets_file.parent.name == self.costume_file:
                 yield obj
+
+    def mesh_pptr(self, robj, tt):
+        """A SkinnedMeshRenderer holds its mesh; a MeshRenderer draws its GameObject's MeshFilter's.
+        Returns (assets file the PPtr is relative to, PPtr)."""
+        if "m_Mesh" in tt:
+            return robj.assets_file, tt["m_Mesh"]
+        go = robj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
+        for c in go["m_Component"]:
+            comp = self.resolve(robj.assets_file, c["component"])
+            if comp is not None and comp.type.name == "MeshFilter":
+                return comp.assets_file, comp.read_typetree()["m_Mesh"]
+        return None, None
+
+    def is_builtin_quad(self, assets_file, pptr) -> bool:
+        """Picture-board props draw Unity's built-in Quad (`unity default resources` 10210), which
+        is in no bundle (checked: the boards' x/y scale matches their texture's aspect)."""
+        if assets_file is None or not pptr or not pptr["m_FileID"]:
+            return False
+        ext = assets_file.externals[pptr["m_FileID"] - 1].path
+        return ext.endswith("unity default resources") and pptr["m_PathID"] == BUILTIN_QUAD
+
+    def add_builtin_quad(self, tt, robj, node_idx: int) -> None:
+        """Unity's Quad: 1 x 1 in the XY plane, centred, facing -Z, uv 0..1, triangles 0 3 1 3 0 2;
+        converted like every mesh (x mirrored, v flipped, winding reversed)."""
+        pos = np.array([[-0.5, -0.5, 0], [0.5, -0.5, 0], [-0.5, 0.5, 0], [0.5, 0.5, 0]]) * [-1, 1, 1]
+        uv = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float64)
+        uv[:, 1] = 1.0 - uv[:, 1]
+        attrs = {"POSITION": self.glb.accessor(pos, "VEC3", minmax=True),
+                 "NORMAL": self.glb.accessor(np.tile([0.0, 0.0, -1.0], (4, 1)), "VEC3"),
+                 "TEXCOORD_0": self.glb.accessor(uv, "VEC2")}
+        tri = np.array([[0, 3, 1], [3, 0, 2]])[:, [0, 2, 1]]
+        prim = {"attributes": attrs, "indices": self.glb.accessor(tri.reshape(-1), "SCALAR", ctype=5125)}
+        if tt["m_Materials"]:
+            mi = self.material(robj.assets_file, tt["m_Materials"][0])
+            if mi is not None:
+                prim["material"] = mi
+        g = self.glb.gltf
+        g["meshes"].append({"name": "Quad", "primitives": [prim]})
+        node = g["nodes"][node_idx]
+        node["mesh"] = len(g["meshes"]) - 1
+        if not tt.get("m_Enabled", 1):
+            node.setdefault("extras", {})["rendererEnabled"] = False
 
     def add_renderer(self, robj) -> None:
         tt = robj.read_typetree()
@@ -245,7 +317,11 @@ class CostumeExporter:
         go = go_obj.read_typetree()
         tr_pptr = next(c["component"] for c in go["m_Component"] if self.resolve(robj.assets_file, c["component"]).type.name == "Transform")
         node_idx = self.node_of.get((robj.assets_file.name, tr_pptr["m_PathID"]))
-        mesh_obj = self.resolve(robj.assets_file, tt["m_Mesh"])
+        mesh_file, mesh_pptr = self.mesh_pptr(robj, tt)
+        mesh_obj = self.resolve(mesh_file, mesh_pptr) if mesh_pptr else None
+        if node_idx is not None and mesh_obj is None and self.is_builtin_quad(mesh_file, mesh_pptr):
+            self.add_builtin_quad(tt, robj, node_idx)
+            return
         if node_idx is None or mesh_obj is None:
             print(f"  [skip] renderer on {go['m_Name']}: no node/mesh")
             return
@@ -271,7 +347,7 @@ class CostumeExporter:
             if col.max() > 1.0:
                 col = col / 255.0
             attrs["COLOR_0"] = self.glb.accessor(col[:, :4] if col.shape[1] >= 4 else col, "VEC4" if col.shape[1] >= 4 else "VEC3")
-        bones = [self.node_of.get(self._tkey(robj.assets_file, b)) for b in tt["m_Bones"]]
+        bones = [self.node_of.get(self._tkey(robj.assets_file, b)) for b in tt.get("m_Bones", [])]
         skin_idx = None
         if bones and all(b is not None for b in bones):
             if h.m_BoneWeights:
@@ -301,7 +377,7 @@ class CostumeExporter:
             g["skins"].append({"joints": bones, "inverseBindMatrices": self.glb.accessor(ibm_cm, "MAT4"),
                                "name": go["m_Name"]})
             skin_idx = len(g["skins"]) - 1
-        elif tt["m_Bones"]:
+        elif tt.get("m_Bones"):
             print(f"  [warn] {go['m_Name']}: bones outside the costume hierarchy, exported unskinned")
         # morph targets from blendshape channels (last frame of each channel = full weight)
         targets, names = [], []
@@ -348,7 +424,8 @@ class CostumeExporter:
         if not tt.get("m_Enabled", 1):
             node.setdefault("extras", {})["rendererEnabled"] = False
         # Unity draws a skinned mesh in its root bone's space: that is the shaders' "object space"
-        root_bone = self.node_of.get(self._tkey(robj.assets_file, tt["m_RootBone"])) if tt["m_RootBone"]["m_PathID"] else None
+        root_pptr = tt.get("m_RootBone")
+        root_bone = self.node_of.get(self._tkey(robj.assets_file, root_pptr)) if root_pptr and root_pptr["m_PathID"] else None
         if root_bone is not None:
             node.setdefault("extras", {})["rootBone"] = g["nodes"][root_bone]["name"]
 
@@ -410,9 +487,20 @@ def main() -> None:
     ap.add_argument("costumes", nargs="+")
     ap.add_argument("--index", default=str(DEFAULT_INDEX))
     ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--replace", action="store_true",
+                    help="write into a folder that holds hamproductions' GLBs (their extra GLBs stay; "
+                         "see CLAUDE.md before using this for a prop)")
     args = ap.parse_args()
     index = UA.BundleIndex(args.index)
     for cid in args.costumes:
+        # A few early props are hamproductions files (main GLB + extra GLBs + textures) that the
+        # build uses as their index describes while every file is in the store. Writing our
+        # self-contained GLB over their main file would make the reader load both.
+        others = [p.name for p in (Path(args.out) / cid).glob("*.glb") if p.name != f"{cid}.glb"]
+        if others and not args.replace:
+            print(f"[skip] {cid}: {Path(args.out) / cid} holds other GLBs ({', '.join(others[:3])}); "
+                  "pass --replace to export alongside them")
+            continue
         env, costume_file = index.load_closure(cid)
         glb = Glb()
         ex = CostumeExporter(env, costume_file, glb)
