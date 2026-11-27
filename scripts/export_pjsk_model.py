@@ -181,11 +181,7 @@ class PjskModelExporter(CostumeExporter):
         for obj in self.env.objects:
             if obj.type.name != "SkinnedMeshRenderer" or self.bundle_of(obj) is None:
                 continue
-            tt = obj.read_typetree()
-            go = obj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
-            tr = next(c["component"] for c in go["m_Component"]
-                      if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
-            if (obj.assets_file.name, tr["m_PathID"]) in self.node_of:
+            if self._host(obj) is not None:
                 yield obj
 
     def character_hair(self) -> None:
@@ -203,15 +199,110 @@ class PjskModelExporter(CostumeExporter):
             if "offset" not in tt or "headTransform" not in tt:
                 continue
             head = self.node_of.get(self._tkey(obj.assets_file, tt["headTransform"]))
-            go = obj.assets_file.objects[tt["m_GameObject"]["m_PathID"]].read_typetree()
-            tr = next(c["component"] for c in go["m_Component"]
-                      if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
-            host = self.node_of.get((obj.assets_file.name, tr["m_PathID"]))
+            host = self._host(obj)
             if head is None or host is None:
                 continue
             o = tt["offset"]
             nodes[host].setdefault("extras", {})["sekaiCharacterHair"] = {
                 "head": nodes[head]["name"], "offset": [-o["x"], o["y"], o["z"]]}
+
+    def _host(self, obj) -> int | None:
+        """glTF node of a Transform, or of a component's GameObject (through its Transform)."""
+        if obj is None:
+            return None
+        if obj.type.name == "Transform":
+            return self.node_of.get((obj.assets_file.name, obj.path_id))
+        go = obj.assets_file.objects[obj.read_typetree()["m_GameObject"]["m_PathID"]].read_typetree()
+        tr = next(c["component"] for c in go["m_Component"]
+                  if self.resolve(obj.assets_file, c["component"]).type.name == "Transform")
+        return self.node_of.get(self._tkey(obj.assets_file, tr))
+
+    def utj_springs(self) -> None:
+        """UTJ SpringBone (UnityChan SpringBone 1.1) components of the body and head prefabs, as node
+        extras for src/engine/castSwap/utjSpringBone.ts: `utjSpringManager` (on Neck: hair, on Hip:
+        skirt), `utjSpringBone`, `utjSpringCollider`. References are glTF node indices, and every
+        referenced node gets extras `utjNode` = its index (names aren't unique after GLTFLoader's
+        sanitizing). Vectors are in glTF axes. A Sekai.SekaiSpringBone's colliderFlag appends body
+        colliders as ModelUtility.SpringBoneSetup (JP RVA 0x4EC5CFC) does at load: for each set bit
+        (Hip, Chest, L_Arm, R_Arm, L_Elbow, R_Elbow), every capsule and sphere collider whose name
+        starts with CL_Hip, CL_Chest, CL_Left_Arm, CL_Right_Arm, CL_Left_Elbow, CL_Right_Elbow."""
+        nodes = self.glb.gltf["nodes"]
+        found = []  # (class, host node, typetree, assets file)
+        for obj in self.env.objects:
+            if obj.type.name != "MonoBehaviour" or self.bundle_of(obj) is None:
+                continue
+            try:
+                tt = obj.read_typetree()
+                script = self.resolve(obj.assets_file, tt["m_Script"])
+                cls = script.read_typetree()["m_ClassName"] if script else ""
+            except Exception:  # noqa: BLE001 - scripts without a type tree
+                continue
+            if cls not in ("SpringManager", "SpringBone", "SekaiSpringBone", "SpringSphereCollider",
+                           "SpringCapsuleCollider", "SpringPanelCollider"):
+                continue
+            host = self._host(obj)
+            if host is not None:  # None: a component outside the exported prefabs (sit_body, ...)
+                found.append((cls, host, tt, obj.assets_file))
+
+        def ref(af, pptr) -> int | None:
+            i = self._host(self.resolve(af, pptr))
+            if i is not None:
+                nodes[i].setdefault("extras", {})["utjNode"] = i
+            return i
+
+        def refs(af, pptrs) -> list[int]:
+            return [i for i in (ref(af, p) for p in pptrs or []) if i is not None]
+
+        def vec(v) -> list[float]:
+            return [-v["x"], v["y"], v["z"]]
+
+        def limits(a) -> dict:
+            return {"active": bool(a["active"]), "min": a["min"], "max": a["max"]}
+
+        colliders: dict[int, str] = {}  # node -> sphere / capsule / panel
+        for cls, host, tt, af in found:
+            if cls.endswith("Collider"):
+                kind = cls[len("Spring"):-len("Collider")].lower()
+                if host in colliders:
+                    print(f"  [warn] two spring colliders on {nodes[host]['name']}; keeping the {kind}")
+                nodes[host].setdefault("extras", {}).update(utjNode=host, utjSpringCollider={
+                    "type": kind, "radius": tt.get("radius", 0.0), "height": tt.get("height", 0.0),
+                    "width": tt.get("width", 0.0)})
+                colliders[host] = kind
+        prefixes = ["CL_Hip", "CL_Chest", "CL_Left_Arm", "CL_Right_Arm", "CL_Left_Elbow", "CL_Right_Elbow"]
+        for cls, host, tt, af in found:
+            extras = nodes[host].setdefault("extras", {})
+            key = "utjSpringManager" if cls == "SpringManager" else "utjSpringBone"
+            if not cls.endswith("Collider") and key in extras:
+                print(f"  [warn] two {key} components on {nodes[host]['name']}; keeping the last")
+            if cls == "SpringManager":
+                extras["utjSpringManager"] = {
+                    "isPaused": bool(tt["isPaused"]), "simulationFrameRate": tt["simulationFrameRate"],
+                    "dynamicRatio": tt["dynamicRatio"], "gravity": vec(tt["gravity"]),
+                    "bounce": tt["bounce"], "friction": tt["friction"],
+                    "enableAngleLimits": bool(tt["enableAngleLimits"]), "enableCollision": bool(tt["enableCollision"]),
+                    "enableLengthLimits": bool(tt["enableLengthLimits"]),
+                    "collideWithGround": bool(tt["collideWithGround"]), "groundHeight": tt["groundHeight"],
+                    "springBones": refs(af, tt["springBones"])}
+            elif cls in ("SpringBone", "SekaiSpringBone"):
+                spheres, capsules = refs(af, tt["sphereColliders"]), refs(af, tt["capsuleColliders"])
+                flag = tt.get("colliderFlag", 0) if cls == "SekaiSpringBone" else 0
+                for bit, prefix in enumerate(prefixes):
+                    if flag & (1 << bit):
+                        group = [c for c in colliders if nodes[c]["name"].startswith(prefix)]
+                        capsules += [c for c in group if colliders[c] == "capsule"]
+                        spheres += [c for c in group if colliders[c] == "sphere"]
+                extras.update(utjNode=host, utjSpringBone={
+                    "stiffnessForce": tt["stiffnessForce"], "dragForce": tt["dragForce"],
+                    "springForce": vec(tt["springForce"]), "windInfluence": tt["windInfluence"],
+                    "springConstant": tt.get("SpringConstant", 0.5), "pivotNode": ref(af, tt["pivotNode"]),
+                    "angularStiffness": tt["angularStiffness"],
+                    "yAngleLimits": limits(tt["yAngleLimits"]), "zAngleLimits": limits(tt["zAngleLimits"]),
+                    "lengthLimitTargets": refs(af, tt.get("lengthLimitTargets")), "radius": tt["radius"],
+                    "sphereColliders": spheres, "capsuleColliders": capsules,
+                    "panelColliders": refs(af, tt["panelColliders"])})
+        counts = {c: sum(1 for f in found if f[0] == c) for c in sorted({f[0] for f in found})}
+        print(f"  springs: {counts}")
 
     def run(self) -> None:
         body_root = self.prefab_root(self.body, "body")
@@ -232,6 +323,7 @@ class PjskModelExporter(CostumeExporter):
         if body_skins is not None:
             self.rebind_head_meshes(body_skins, offset)
         self.character_hair()
+        self.utj_springs()
 
 
 def export_one(bundles: Path, body: str, face: str, model_id: str, character: dict | None, out_dir: Path) -> None:

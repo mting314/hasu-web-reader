@@ -10,12 +10,14 @@ import {
   type PjskShaderState,
 } from "./pjskMaterial";
 import { createPjskRetarget } from "./pjskRetarget";
+import { createUtjSpringBones } from "./utjSpringBone";
 
 /**
  * The PJSK cast swap: a Project Sekai model stands in for a Hasu character. The Hasu character
  * stays loaded with its meshes hidden, so the story motion, breathing, look-at and expressions keep
  * running on it exactly as before; every frame its pose and face weights are copied onto the PJSK
- * model (pjskRetarget.ts, pjskFace.ts). Models come from scripts/export_pjsk_model.py, listed in
+ * model (pjskRetarget.ts, pjskFace.ts), and its hair and skirt run PJSK's spring bones
+ * (utjSpringBone.ts). Models come from scripts/export_pjsk_model.py, listed in
  * `pjsk/models.json`.
  */
 
@@ -32,8 +34,9 @@ export type CastHeightMode = "replaced" | "pjsk";
 
 export interface CastSwap {
   modelId: string;
-  /** Copy pose and face from the hidden Hasu character (after its motion, look-at and emotion). */
-  update(): void;
+  /** Copy pose and face from the hidden Hasu character (after its motion, look-at and emotion),
+   * then step the spring bones by `dt` seconds. */
+  update(dt: number): void;
   setHeightMode(mode: CastHeightMode): void;
   detach(): void;
 }
@@ -74,6 +77,9 @@ export async function attachCastSwap(opts: {
   }
   if (retarget.missing.length) console.info(`[castSwap] ${opts.entry.id}: unmapped bones`, retarget.missing);
   const face = createPjskFace(opts.source, model);
+  // On the rest pose, before any scaling. readerCollision: keep the hair out of the body in Hasu's
+  // tilted and seated poses (more colliders than the game gives it, along the whole bone).
+  const springs = createUtjSpringBones(model, { readerCollision: true });
   const nativeTop = restTop(model);
   // CharacterModel.headTransform, and SekaiCharacterHair's offset (export_pjsk_model.py extras)
   const head = model.getObjectByName("Head") ?? null;
@@ -101,18 +107,20 @@ export async function attachCastSwap(opts: {
 
   const setHeightMode = (mode: CastHeightMode) => {
     model.scale.setScalar(mode === "pjsk" ? opts.entry.heightM / nativeTop : retarget.hipRatio);
+    springs?.reset();
   };
   setHeightMode(opts.heightMode);
   if (import.meta.env.DEV) {
     const w = window as unknown as { __castSwaps?: Record<string, unknown> };
-    (w.__castSwaps ??= {})[opts.entry.id] = { model, source: opts.source, retarget, nativeTop, THREE };
+    (w.__castSwaps ??= {})[opts.entry.id] = { model, source: opts.source, retarget, springs, nativeTop, THREE };
   }
 
   return {
     modelId: opts.entry.id,
-    update() {
+    update(dt) {
       retarget.update();
       face?.();
+      springs?.update(dt);
       if (head) updatePjskShaderState(shaderState, head, hairOffset);
       setPjskShaderTime(performance.now() / 1000);
     },

@@ -487,9 +487,37 @@ A reader setting ("Project Sekai cast", `src/components/CastPanel.tsx`, stored i
   globals (`SekaiCharacterOutlinePass.UpdateOutline` + the renderer's `SekaiCharacterOutlineFeature`
   settings in the APK's `globalgamemanagers.assets`), ambient/outline colour defaults
   (`SekaiCharacterAmbientLight` .ctor/Reset).
+- **Spring bones**: PJSK's hair/skirt physics is UTJ SpringBone (UnityChanSpringBone release 1.1,
+  MIT): a `SpringManager` on Neck (hair, head prefab) and on Hip (skirt, bust, accessories, body
+  prefab), `SpringBone` / `Sekai.SekaiSpringBone` on each `EX_*` bone (pivot = its `*_offset`
+  parent), `SpringSphereCollider` / `SpringCapsuleCollider` on `CL_*` nodes. PJSK's build is
+  upstream's code (checked: UpdateDynamics, UpdateSpring, ApplyAngleLimits); the extra
+  `isSumOfForcesOnBone` gate defaults to true. `ModelUtility.SpringBoneSetup` (0x4EC5CFC) appends
+  body colliders to head bones by `colliderFlag` bits 0–5 = names starting `CL_Hip`, `CL_Chest`,
+  `CL_Left_Arm`, `CL_Right_Arm`, `CL_Left_Elbow`, `CL_Right_Elbow` (the order of its 12 lambdas;
+  e.g. flag 6 = Chest + Left_Arm, even on right-side strands). The exporter writes them as node
+  extras (`utjSpringManager` / `utjSpringBone` / `utjSpringCollider`, references by `utjNode`
+  index, flags already resolved); `utjSpringBone.ts` is a port of upstream, **the second
+  hand-rolled exception the user approved, again for this feature only**. It simulates in world
+  space with lengths and forces times the model's scale (exact similarity: a 1.64× model moves like
+  the native one), uses fixed 1/60 s steps from real frame time, and resets when a character
+  jumps (a manager node moving > 0.15 model units or turning > 30° in one frame). Every model has
+  one manager on Neck (hair, plus ribbons on airi/emu/mizuki/rin) and one on Hip; all have length
+  limits and ground collision off and no panel colliders. `dynamicRatio` (0.5) never applies:
+  `SetupSpringBone` marks no bone as animated, so UpdateDynamics passes 1.
+  **Reader-only hair collision** (`readerCollision`, on in the cast swap, user-approved; off =
+  exactly the game): the game's colliders suit PJSK's standing dances, but Hasu's tilted/seated
+  poses pushed strands into the chest and arms (UTJ only tests tips, and e.g. Ichika's right
+  strands only get the *left* arm). So every bone of the Neck manager also gets the torso
+  (`CL_Chest`, `Spine`, `Waist`, `Hip`) and arm/forearm capsules, and the bone's whole length is
+  kept out (closest point of the bone to each collider axis, turned about its head; run again
+  after the angle limits so the body wins). Torso colliders a strand already overlaps in its
+  modelled rest shape are skipped (otherwise Shiho's back hair flares 28°).
+  Headless check, `scripts/pjsk_spring_check.ts` (bundle with esbuild, usage at the top):
+  `all <model dir> [scale] [fix]` (every model: rest + hip sway, NaN, scale invariance) and
+  `pose <glb> rest|seated|tilt25|tilt-40 [fix]` (tips / bones inside colliders).
 - Not done yet: the stage `SekaiDirectionalLight` shadow colour/threshold (still Cleista's
-  0.40625), the Eyelash pass, spring bones (UTJ `SpringManager`), helper bones (`*ArmRoll`,
-  `*EllbowSupport`).
+  0.40625), the Eyelash pass, helper bones (`*ArmRoll`, `*EllbowSupport`).
 - Export gotcha (fixed in `export_costume.py`): lossless WebP drops RGB under alpha 0 unless saved
   with `exact=True`; PJSK's `_ValueTex` (and possibly Hasu control maps) store data there.
 
