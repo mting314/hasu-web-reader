@@ -125,6 +125,12 @@ export default function App() {
   const [twoColTranscript, setTwoColTranscript] = useState(true);
   const [twoColPageLayout, setTwoColPageLayout] = useState(false);
   const [tabHiddenPaused, setTabHiddenPaused] = useState(false);
+  // Opened without a click (a shared link, a reload) on a site the browser won't let autoplay:
+  // audio waits for a user gesture, so the first line is held behind a start button instead of
+  // playing silently. Where autoplay is allowed it starts right away.
+  const [awaitingStart, setAwaitingStart] = useState(() => AudioMixer.autoplayBlocked);
+  const awaitingStartRef = useRef(awaitingStart);
+  awaitingStartRef.current = awaitingStart;
   const [scenarioLoadingSlug, setScenarioLoadingSlug] = useState<string | null>(null);
   const [stageLoadProgress, setStageLoadProgress] = useState<StageLoadProgress | null>(null);
   const [firstTurnReady, setFirstTurnReady] = useState(false);
@@ -190,11 +196,42 @@ export default function App() {
   // A line whose stage gate settled while the tab was hidden starts when the tab comes back.
   const deferredLineStartRef = useRef<(() => void) | null>(null);
   const runDeferredLineStart = () => {
+    if (awaitingStartRef.current) return;
     const start = deferredLineStartRef.current;
     deferredLineStartRef.current = null;
     start?.();
   };
   const hiddenPausedAtRef = useRef<number | null>(null);
+
+  // The first click or key anywhere releases the start hold (the AudioMixer has already created
+  // its AudioContext on that gesture's pointerdown/keydown). Released when the gesture ends, so
+  // the gesture itself isn't also taken as "advance": the start button is still there to take the
+  // click instead of the stage behind it, and the Space/ArrowRight keydown has already been
+  // ignored by the hold. Also released if the AudioContext starts running before any gesture
+  // (the browser allowed autoplay after all).
+  useEffect(() => {
+    if (!awaitingStart) return;
+    const release = () => {
+      awaitingStartRef.current = false;
+      setAwaitingStart(false);
+      runDeferredLineStart();
+    };
+    const unsubscribe = AudioMixer.onAudioStarted(() => {
+      if (!(navigator.userActivation?.hasBeenActive ?? true)) release();
+    });
+    // Keys that don't count as a user gesture (Escape) can't unlock audio, so they don't release.
+    const onGesture = () => {
+      if (navigator.userActivation?.hasBeenActive ?? true) release();
+    };
+    window.addEventListener("click", onGesture, { capture: true });
+    window.addEventListener("keyup", onGesture, { capture: true });
+    if (!AudioMixer.autoplayBlocked) release();
+    return () => {
+      unsubscribe();
+      window.removeEventListener("click", onGesture, { capture: true });
+      window.removeEventListener("keyup", onGesture, { capture: true });
+    };
+  }, [awaitingStart]);
   const readingTimerRef = useRef<{
     id: number | null;
     remainingMs: number;
@@ -447,13 +484,14 @@ export default function App() {
    * Click when text is already complete -> advances to the next line.
    */
   const handleStageOrKeyAdvance = useCallback(() => {
-    if (!stageReady || !firstTurnReady) return;
+    // (awaitingStart: the click or key that releases the start hold doesn't also skip the text)
+    if (!stageReady || !firstTurnReady || awaitingStart) return;
     if (settings.showSubtitles && !isTypewriterDone) {
       setRevealedChars(9999);
       return;
     }
     handleNext();
-  }, [isTypewriterDone, handleNext, stageReady, firstTurnReady, settings.showSubtitles]);
+  }, [isTypewriterDone, handleNext, stageReady, firstTurnReady, awaitingStart, settings.showSubtitles]);
 
   const handlePrev = useCallback(() => {
     if (currentTurnIndex > 0) {
@@ -550,7 +588,8 @@ export default function App() {
         finishAfterReading();
       }
     };
-    if (document.hidden && settings.pauseWhenHidden) deferredLineStartRef.current = startLine;
+    if (awaitingStartRef.current || (document.hidden && settings.pauseWhenHidden))
+      deferredLineStartRef.current = startLine;
     else startLine();
 
     return () => {
@@ -631,7 +670,7 @@ export default function App() {
   }, [currentTurn]);
 
   useEffect(() => {
-    if (!currentTurn || !stageReady || tabHiddenPaused) return;
+    if (!currentTurn || !stageReady || tabHiddenPaused || awaitingStart) return;
     if (settings.textSpeed >= 5) {
       setRevealedChars(9999);
       return;
@@ -647,7 +686,7 @@ export default function App() {
       });
     }, 26);
     return () => window.clearInterval(interval);
-  }, [currentTurn, stageReady, tabHiddenPaused, settings.textSpeed]);
+  }, [currentTurn, stageReady, tabHiddenPaused, awaitingStart, settings.textSpeed]);
 
   // Keep the active line in view in the script panel, scrolling as little as needed (like Cleista's
   // syncLineChrome): a line below the visible area ends up at the panel's bottom, one above at its
@@ -1298,7 +1337,7 @@ export default function App() {
                 cameraMode={settings.cameraMode}
                 enable3D={settings.enable3DStage}
                 resolution={settings.stageResolution}
-                paused={tabHiddenPaused}
+                paused={tabHiddenPaused || awaitingStart}
                 obscured={sidebarOpen || creditsOpen}
                 audioMixer={AudioMixer}
                 onAdvance={handleStageOrKeyAdvance}
@@ -1323,6 +1362,26 @@ export default function App() {
                 >
                   <div className="h-9 w-9 rounded-full border-2 border-white/20 border-t-[#7c9ff5] animate-spin" />
                 </div>
+              )}
+
+              {/* Start button while the first line waits for a user gesture (the browser blocked
+                  autoplay); the window-level gesture listener does the starting, this only swallows
+                  the click */}
+              {awaitingStart && firstTurnReady && !scenarioLoadingSlug && (
+                <button
+                  id="stageStart"
+                  type="button"
+                  aria-label="Start playback"
+                  onClick={(e) => e.stopPropagation()}
+                  className="group absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 bg-black/35 cursor-pointer"
+                >
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full border border-white/30 bg-black/45 text-white/90 backdrop-blur-sm transition-colors group-hover:bg-black/65 group-hover:text-white">
+                    <Play className="ml-1 h-7 w-7 fill-current" />
+                  </span>
+                  <span className="rounded-full bg-black/55 px-3 py-1 text-[13px] font-medium text-white/85">
+                    Click to start with sound
+                  </span>
+                </button>
               )}
 
               {/* Cleista top-center loading status pill (#stageJpLoading) */}
