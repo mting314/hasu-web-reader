@@ -219,13 +219,17 @@ export default function App() {
     const unsubscribe = AudioMixer.onAudioStarted(() => {
       if (!(navigator.userActivation?.hasBeenActive ?? true)) release();
     });
-    window.addEventListener("click", release, { capture: true });
-    window.addEventListener("keyup", release, { capture: true });
+    // Keys that don't count as a user gesture (Escape) can't unlock audio, so they don't release.
+    const onGesture = () => {
+      if (navigator.userActivation?.hasBeenActive ?? true) release();
+    };
+    window.addEventListener("click", onGesture, { capture: true });
+    window.addEventListener("keyup", onGesture, { capture: true });
     if (!AudioMixer.autoplayBlocked) release();
     return () => {
       unsubscribe();
-      window.removeEventListener("click", release, { capture: true });
-      window.removeEventListener("keyup", release, { capture: true });
+      window.removeEventListener("click", onGesture, { capture: true });
+      window.removeEventListener("keyup", onGesture, { capture: true });
     };
   }, [awaitingStart]);
   const readingTimerRef = useRef<{
